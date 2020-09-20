@@ -1,0 +1,30 @@
+{
+  "name": "cloudflare-bypass",
+  "version": "0.0.1",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devgianlu/cloudflare-bypass.git"
+  },
+  "keywords": [],
+  "author": "devgianlu",
+  "license": "UNLICENSED",
+  "private": true,
+  "bugs": {
+    "url": "https://github.com/devgianlu/cloudflare-bypass/issues"
+  },
+  "homepage": "https://github.com/devgianlu/cloudflare-bypass#readme",
+  "dependencies": {
+    "axios": "^0.20.0"
+  },
+  "devDependencies": {
+    "eslint": "^7.9.0",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-promise": "^4.2.1",
+    "eslint-plugin-standard": "^4.0.1"
+  }
+}
