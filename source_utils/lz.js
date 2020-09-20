@@ -16,6 +16,8 @@ function getBaseValue(alphabet, character) {
 	return baseReverseDic[alphabet][character]
 }
 
+lz.compressToEncodedURIComponent()
+
 const output = lz._decompress(input.length, 32, function (index) {
 	return getBaseValue(alphabet, input.charAt(index))
 })
