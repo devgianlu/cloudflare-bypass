@@ -1,7 +1,7 @@
 /* eslint-disable */
 
 var that = this || self;
-var e = [];
+var queue = [];
 var getCookie = function (name) {
 	var q = name + '=';
 	var r = document.cookie.split(';');
@@ -40,11 +40,11 @@ var scheduleReload = function () {
 	}, q)
 };
 
-this["onerror"] = function (n, o, p, q, r) {
-	if (n.toLowerCase().indexOf("script error") > -1) {
+this["onerror"] = function (msg, url, line, column, obj) {
+	if (msg.toLowerCase().indexOf("script error") > -1) {
 		alert("Script Error: See Browser Console for Detail");
 	} else {
-		var w = ["Message: " + n, "URL: " + o, "Line: " + p, "Column: " + q, "Error object: " + JSON.stringify(r)].join(" - ")
+		var w = ["Message: " + msg, "URL: " + url, "Line: " + line, "Column: " + column, "Error object: " + JSON.stringify(obj)].join(" - ")
 		console.log("[[[ERROR]]]:", w);
 		scheduleReload();
 	}
@@ -56,7 +56,7 @@ var sendRequest = function (url, retryCount) {
 	retryCount = retryCount || 0;
 	if (retryCount >= 5) {
 		scheduleReload()
-		return undefined;
+		return;
 	}
 
 	var retrying = false;
@@ -87,18 +87,22 @@ var sendRequest = function (url, retryCount) {
 		if (req.readyState != 4) return;
 		if (req.status != 200 && req.status != 304) {
 			retry();
-			return undefined;
+			return;
 		}
 
+		// Update program state with 'b'
 		addCookie("cf_chl_prog", 'b' + that["_cf_chl_ctx"]["chLog"]['c'], 1)
 
-		new Function(m(req.responseText))()
+		// Decode payload and execute it
+		new Function(decodeResponse(req.responseText))()
 
+		// Update program state with 'a'
 		addCookie("cf_chl_prog", 'a' + that["_cf_chl_ctx"]["chLog"]['c'], 1)
 	};
 
-	var v = k["compressToEncodedURIComponent"](JSON.stringify(that["_cf_chl_ctx"])).replace('+', '%2b'); // TODO: Use lz-string with custom alphabet
-	req.send('v_' + that["_cf_chl_opt"]["cRay"] + '=' + v);
+	// Create payload and send it
+	var payload = k["compressToEncodedURIComponent"](JSON.stringify(that["_cf_chl_ctx"])).replace('+', '%2b'); // TODO: Use lz-string with custom alphabet
+	req.send('v_' + that["_cf_chl_opt"]["cRay"] + '=' + payload);
 };
 
 var createRequest = function () {
@@ -119,7 +123,6 @@ var createRequest = function () {
 var lzBase64Alphabet = "yvejD7CpqOLnKRAUgWNQr2wYdIaGHZM9P5ST8shlVb6oBmfEXuiFz0J1ck3tx4"
 var lzUriAlphabet = "tEM+ujl9UDp$8OwqWAKRZPSzLabg5sHIcNfQiTV-B1nXdyrCohFYxkG23J4em6v07"
 
-
 var addReadyListener = function l(n) {
 	if (document.addEventListener) {
 		document.addEventListener("DOMContentLoaded", n)
@@ -136,54 +139,63 @@ addReadyListener(function (ev) {
 });
 
 this["_cf_chl_enter"] = function () {
-	var z = that["_cf_chl_opt"];
-	var y = "cf_chl_" + z["cvId"];
-	addCookie(y, z["cHash"], 1);
+	var opts = that["_cf_chl_opt"];
 
-	var s = document.cookie.indexOf(y) === -1 || !that.navigator.cookieEnabled;
+	// Add test cookie
+	var chlCookie = "cf_chl_" + opts["cvId"];
+	addCookie(chlCookie, opts["cHash"], 1);
+
+	// Check that cookies are working
+	var s = document.cookie.indexOf(chlCookie) === -1 || !that.navigator.cookieEnabled;
 	if (s) {
 		var r = document.getElementById("no-cookie-warning")
 		if (r) r.style.display = "block"
 		return void 0
 	}
 
-	removeCookie("cf_chl_" + z["cvId"]);
+	// Remove test cookie
+	removeCookie("cf_chl_" + opts["cvId"]);
+
+	// Set program state to 's'
 	addCookie("cf_chl_prog", 's', 1);
 
-	var x;
-	for (x = 0; x < e.length; e[x](), x++) ;
+	// Execute everything from the queue
+	for (var i = 0; i < queue.length; i++)
+		queue[i]();
 
+	// Set program state to 'e'
 	addCookie("cf_chl_prog", 'e', 1);
 
-	var v = {};
-	v['c'] = 0
+	// Create context
+	var ctx = {}
+	ctx["chLog"] = {'c': 0}
+	ctx["chReq"] = opts["cType"]
+	ctx["cNounce"] = opts["cNounce"]
+	ctx["chC"] = 0
+	ctx["chCAS"] = 0
+	ctx['oV'] = 1
+	ctx["cRq"] = opts["cRq"]
+	that["_cf_chl_ctx"] = ctx;
 
-	var w = {}
-	w["chLog"] = v
-	w["chReq"] = z["cType"]
-	w["cNounce"] = z["cNounce"]
-	w["chC"] = 0
-	w["chCAS"] = 0
-	w['oV'] = 1
-	w["cRq"] = z["cRq"]
-	that["_cf_chl_ctx"] = w;
-
+	// Update log with request start time
 	that["_cf_chl_ctx"]["chLog"][that["_cf_chl_ctx"]['chLog']['c']++] = {
 		'start': new Date().getTime()
 	};
 
+	// Send request after small delay
 	setTimeout(function () {
-		sendRequest("/cdn-cgi/challenge-platform/generate/ov" + 1 + "/0.6167940643061035:1600608587:7ba9d7deedd7d1cc95a452642c383762fb0e5461d197f6544f815893ef8ff305/" + z["cRay"] + '/' + z["cHash"])
+		sendRequest("/cdn-cgi/challenge-platform/generate/ov" + 1 + "/0.6167940643061035:1600608587:7ba9d7deedd7d1cc95a452642c383762fb0e5461d197f6544f815893ef8ff305/" + opts["cRay"] + '/' + opts["cHash"])
 	}, 10);
 };
 
 this['_cf_chl_done_ran'] = false;
 this["_cf_chl_done"] = function () {
+	// Set program state to 'b'
 	addCookie("cf_chl_prog", 'b', 1);
 	that["_cf_chl_done_ran"] = true
 };
 
-var m = function (n) {
+var decodeResponse = function (n) {
 	var v = 32
 	var w = that["_cf_chl_opt"]["cRay"] + '_' + 0
 	w.replace(/./g, function (x, z) {
@@ -197,7 +209,8 @@ var m = function (n) {
 	return t.join('')
 };
 
-e.push(function () {
+// Push page reload to
+queue.push(function () {
 	setTimeout(function () {
 		that['_cf_chl_done']()
 	}, 4000)
