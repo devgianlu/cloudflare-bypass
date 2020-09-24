@@ -20,6 +20,7 @@
   "homepage": "https://github.com/devgianlu/cloudflare-bypass#readme",
   "dependencies": {
     "axios": "^0.20.0",
+    "jsdom": "^16.4.0",
     "lz-string": "^1.4.4"
   },
   "devDependencies": {
