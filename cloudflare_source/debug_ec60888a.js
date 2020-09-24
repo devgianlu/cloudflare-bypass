@@ -28,12 +28,12 @@ for (var m = 0; m < entries.length; m++) {
 	} else if (entry.entryType === "navigation") {
 		var v = {}
 		v["t"] = "n"
-		v["i"] = entry.type
+		v["i"] = entry.type // "navigate", "reload", "back_forward" or "prerender".
 		window._cf_chl_ctx[window._cf_chl_ctx.chC]["p"][m] = v
 	} else if (entry.entryType === "paint") {
 		var x = {}
 		x["t"] = "p"
-		x["i"] = entry.name
+		x["i"] = entry.name // "first-paint" or "first-contentful-paint".
 		window._cf_chl_ctx[window._cf_chl_ctx.chC]["p"][m] = x
 	} else if (entry.entryType === "frame") {
 		var y = {}

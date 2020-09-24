@@ -97,7 +97,7 @@ var f = function (obj, prefix, list) {
 				continue;
 			} else if (prefix + key == "d.cookie") {
 				append(prefix + key, type)
-			} else if (prefix + key == "d.vatvygetElementsByName") { // FIXME: ??
+			} else if (prefix + key == "d.vatvygetElementsByName") { // It's correct (quite strange)
 				append(prefix + key, obj[key].toString())
 			} else if (type === "n" || type === "s" || type === "a" || type === "b") {
 				append(prefix + key, obj[key])

@@ -1,5 +1,5 @@
 const axios = require('axios')
-const crypto = require('crypto')
+
 const vm = require('vm')
 const {JSDOM} = require('jsdom')
 const lz = require('./lz')
@@ -100,8 +100,6 @@ class CloudflareBypass {
 	_extractFromScript(data) {
 		const values = {}
 
-		console.log(data)
-
 		const bigArray = data.match(/a='(?<a>.*)'\.split/)[1].split(',')
 		for (let i = 0; i < bigArray.length; i++) {
 			if (!('lzAlphabet' in values) && bigArray[i].length === 65 && bigArray[i].indexOf('$') !== -1)
@@ -154,19 +152,11 @@ class CloudflareBypass {
 
 		let sendUrl = null
 		const chContext = this._jsdom.getInternalVMContext()
-		const ctxWindow = {
-			_cf_chl_opt: this._opts,
-			_cf_chl_ctx: this._ctx,
-			SHA256: function (input) {
-				const hash = crypto.createHash('sha256')
-				hash.update(input)
-				return hash.digest().toString()
-			},
-			sendRequest: function (url) {
-				sendUrl = url
-			}
+		chContext.window['_cf_chl_opt'] = this._opts
+		chContext.window['_cf_chl_ctx'] = this._ctx
+		chContext.window['sendRequest'] = function (url) {
+			sendUrl = url
 		}
-		Object.assign(chContext['window'], ctxWindow)
 
 		this._cookies.putProgram('b' + this._ctx.chLog.c)
 

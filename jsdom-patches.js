@@ -1,4 +1,13 @@
 const imgProbe = require('probe-image-size')
+const crypto = require('crypto')
+
+function patchSha256(ctx) {
+	ctx.window['SHA256'] = function (input) {
+		const hash = crypto.createHash('sha256')
+		hash.update(input)
+		return hash.digest().toString()
+	}
+}
 
 function patchImageChallenge(ctx) { // 89d70e43
 	const _getElementById = ctx.document.getElementById.bind(ctx.document)
@@ -37,5 +46,6 @@ function patchImageChallenge(ctx) { // 89d70e43
 
 module.exports = function (jsdom) {
 	const ctx = jsdom.getInternalVMContext()
+	patchSha256(ctx)
 	patchImageChallenge(ctx)
 }
