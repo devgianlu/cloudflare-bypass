@@ -250,6 +250,7 @@ class CloudflareBypass {
 		}
 
 		console.log('DONEEEEEEEEEEEEEEEEEEEEEEEEEEE')
+		this._jsdom.window.close()
 	}
 
 	async request() {
