@@ -3,6 +3,7 @@ const crypto = require('crypto')
 const vm = require('vm')
 const {JSDOM} = require('jsdom')
 const lz = require('./lz')
+const patchJsDom = require('./jsdom-patches')
 const {addSuccessfulAttempt, addFailedAttempt} = require('./debugging')
 
 
@@ -182,28 +183,6 @@ class CloudflareBypass {
 		return sendUrl
 	}
 
-	_setupJsDom() {
-		const ctx = this._jsdom.getInternalVMContext()
-		const _getElementById = ctx.document.getElementById.bind(ctx.document)
-		ctx.document.getElementById = function (id) {
-			const elm = _getElementById(id)
-			if (id !== 'challenge-form')
-				return elm
-
-			const _appendChild = elm.appendChild.bind(elm)
-			elm.appendChild = function (child) {
-				const result = _appendChild(child)
-				if (child instanceof ctx['Image']) {
-					setTimeout(() => child.dispatchEvent(new ctx['Event']('load')), 50)
-				}
-
-				return result
-			}
-
-			return elm
-		}
-	}
-
 	async _solveIuam() {
 		console.debug('Solving IUAM challenge.')
 
@@ -288,7 +267,7 @@ class CloudflareBypass {
 			pretendToBeVisual: true,
 			url: resp.request.res.responseUrl
 		})
-		this._setupJsDom()
+		patchJsDom(this._jsdom)
 
 		if (resp.headers['server'].startsWith('cloudflare') && (resp.status === 429 || resp.status === 503)) {
 			if (/cpo.src\s*=\s*"\/cdn-cgi\/challenge-platform\/orchestrate\/jsch\/v1"/gmi.test(resp.data)) {
