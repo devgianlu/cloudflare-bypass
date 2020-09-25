@@ -4,6 +4,7 @@ const vm = require('vm')
 const {JSDOM} = require('jsdom')
 const lz = require('./lz')
 const patchJsDom = require('./jsdom-patches')
+const patchChallenges = require('./challenge-patches')
 const {addSuccessfulAttempt, addFailedAttempt} = require('./debugging')
 
 
@@ -167,25 +168,33 @@ class CloudflareBypass {
 
 		this._cookies.putProgram('a' + this._ctx.chLog.c)
 
+		patchChallenges(this._ctx)
+
 		console.debug('Context after:', JSON.stringify(this._ctx))
 		console.log('Send URL:', sendUrl)
 		console.log('==================================================\n')
 		return sendUrl
 	}
 
-	async _solveIuam() {
+	async _solveIuam(chPlatUrl) {
 		console.debug('Solving IUAM challenge.')
 
 		const scriptData = (await this._axios.request({
 			method: 'GET',
-			url: '/cdn-cgi/challenge-platform/orchestrate/jsch/v1',
+			url: chPlatUrl + '/orchestrate/jsch/v1',
 			headers: {
 				'Cookie': this._cookies.cookieHeader(false)
 			}
 		})).data
 
-		const extracted = this._extractFromScript(scriptData)
-		console.debug('Extracted script values:', JSON.stringify(extracted))
+		let extracted
+		try {
+			extracted = this._extractFromScript(scriptData)
+			console.debug('Extracted script values:', JSON.stringify(extracted))
+		} catch (e) {
+			console.error(scriptData)
+			throw e
+		}
 
 		this._ctx = {
 			chLog: {'c': 0},
@@ -198,7 +207,7 @@ class CloudflareBypass {
 
 		this._cookies.putProgram('e')
 
-		let url = '/cdn-cgi/challenge-platform/generate/ov' + 1 + extracted['challengePath'] + this._opts['cRay'] + '/' + this._opts['cHash']
+		let url = chPlatUrl + '/generate/ov1' + extracted['challengePath'] + this._opts['cRay'] + '/' + this._opts['cHash']
 		while (true) {
 			const chScript = await this._sendCompressed(url, this._ctx, extracted['lzAlphabet'], 0)
 			if (chScript.indexOf('window.location.reload();') !== -1) {
@@ -260,11 +269,17 @@ class CloudflareBypass {
 		patchJsDom(this._jsdom)
 
 		if (resp.headers['server'].startsWith('cloudflare') && (resp.status === 429 || resp.status === 503)) {
-			if (/cpo.src\s*=\s*"\/cdn-cgi\/challenge-platform\/orchestrate\/jsch\/v1"/gmi.test(resp.data)) {
-				return this._solveIuam()
+			if (/cpo.src\s*=\s*"\/cdn-cgi\/challenge-platform(?:\/h\/g)?\/orchestrate\/jsch\/v1"/gmi.test(resp.data)) {
+				if (resp.data.indexOf('') !== -1) {
+					console.log('============== /h/g/ ==============')
+					return this._solveIuam('/cdn-cgi/challenge-platform/h/g') // FIXME: Something changes here
+				} else {
+					return this._solveIuam('/cdn-cgi/challenge-platform')
+				}
 			} else if (/cpo.src\s*=\s*"\/cdn-cgi\/challenge-platform\/orchestrate\/captcha\/v1"/gmi.test(resp.data)) {
 				throw new Error('Captcha challenge not supported!')
 			} else {
+				console.error(resp.data)
 				throw new Error('Unknown challenge.')
 			}
 		}
