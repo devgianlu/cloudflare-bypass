@@ -271,7 +271,11 @@ class CloudflareBypass {
 				return this.request()
 			} else if (chScript.indexOf('formEl.submit();') !== -1) {
 				addSuccessfulAttempt(this._ctx) // FIXME
-				console.log('FINAL_SCRIPT', chScript)
+
+				if (chScript.indexOf('cpReturnEl') !== -1)
+					console.log('=========== CAPTCHA ===========')
+
+				console.debug('FINAL_SCRIPT', chScript)
 				break
 			}
 
