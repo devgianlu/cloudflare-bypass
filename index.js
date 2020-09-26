@@ -54,11 +54,50 @@ class ManagedCookies {
 	}
 }
 
+class RequestsLog {
+	constructor() {
+		this._list = []
+	}
+
+	put(resp) {
+		let bodyLength = parseInt(resp.headers['content-length'])
+		if (!bodyLength) bodyLength = resp.data.length // Must be the encoded length
+
+		let totalLength = 0
+		totalLength += 'HTTP/1.1 200 OK\r\n'.length
+		totalLength += resp.request.res.rawHeaders.join('\n\r').length
+		totalLength += '\n\r\n\r'.length
+		totalLength += bodyLength
+
+		this._list.push({
+			url: resp.request.res.responseUrl,
+			contentLength: bodyLength,
+			httpVersion: resp.request.res.httpVersion,
+			totalLength: totalLength
+		})
+	}
+
+	find(urlMatch, first = true) {
+		const list = []
+
+		for (let i = 0; i < this._list.length; i++) {
+			if (this._list[i].url.indexOf(urlMatch) !== -1)
+				if (first) return this._list[i]
+				else list.push(this._list[i])
+		}
+
+		if (first) return undefined
+		else return list
+	}
+}
+
+// TODO: Slow down the process
 
 class CloudflareBypass {
 	constructor(url) {
 		this._userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36' // FIXME
 		this._cookies = new ManagedCookies()
+		this._reqLog = new RequestsLog()
 		this._axios = axios.create({
 			baseURL: url,
 			validateStatus: function () {
@@ -69,12 +108,19 @@ class CloudflareBypass {
 		const parsed = new URL(url)
 		this._axios.interceptors.request.use((config) => {
 			config.headers['User-Agent'] = this._userAgent
-			config.headers['Origin'] = parsed.scheme + '://' + parsed.host
+			config.headers['Origin'] = parsed.protocol + '//' + parsed.host
 			config.headers['Referer'] = url
 			config.headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8'
 			config.headers['Accept-Language'] = 'en-US,en;q=0.9'
-			config.headers['Accept-Encoding'] = 'gzip, deflate' // TODO: br
+			// config.headers['Accept-Encoding'] = 'gzip, deflate' // TODO: br
 			return config
+		}, function (error) {
+			return Promise.reject(error)
+		})
+
+		this._axios.interceptors.response.use((resp) => {
+			this._reqLog.put(resp)
+			return resp
 		}, function (error) {
 			return Promise.reject(error)
 		})
@@ -101,7 +147,10 @@ class CloudflareBypass {
 	_extractFromScript(data) {
 		const values = {}
 
-		const bigArray = data.match(/a='(?<a>.*)'\.split/)[1].split(',')
+		let match = data.match(/a='(?<a>.*)'\.split/)
+		if (!match) throw new Error('Couldn\'t find \'a\' array in script.')
+
+		const bigArray = match[1].split(',')
 		for (let i = 0; i < bigArray.length; i++) {
 			if (!('lzAlphabet' in values) && bigArray[i].length === 65 && bigArray[i].indexOf('$') !== -1)
 				values['lzAlphabet'] = bigArray[i]
@@ -110,7 +159,11 @@ class CloudflareBypass {
 		if (!('lzAlphabet' in values))
 			throw new Error('Couldn\'t find LZ alphabet.')
 
-		values['challengePath'] = data.match(/\/[.|0-9]*:\d{10}:.{64}\//)[0]
+		match = data.match(/\/[.|0-9]*:\d{10}:.{64}\//)
+		if (!match)
+			throw new Error('Couldn\'t find challenge path.')
+
+		values['challengePath'] = match[0]
 		if (!('challengePath' in values))
 			throw new Error('Couldn\'t find challenge path.')
 
@@ -168,7 +221,7 @@ class CloudflareBypass {
 
 		this._cookies.putProgram('a' + this._ctx.chLog.c)
 
-		patchChallenges(this._ctx)
+		patchChallenges(this._ctx, {reqLog: this._reqLog})
 
 		console.debug('Context after:', JSON.stringify(this._ctx))
 		console.log('Send URL:', sendUrl)
@@ -269,11 +322,13 @@ class CloudflareBypass {
 		patchJsDom(this._jsdom)
 
 		if (resp.headers['server'].startsWith('cloudflare') && (resp.status === 429 || resp.status === 503)) {
-			if (/cpo.src\s*=\s*"\/cdn-cgi\/challenge-platform(?:\/h\/g)?\/orchestrate\/jsch\/v1"/gmi.test(resp.data)) {
-				if (resp.data.indexOf('') !== -1) {
-					console.log('============== /h/g/ ==============')
-					return this._solveIuam('/cdn-cgi/challenge-platform/h/g') // FIXME: Something changes here
+			let match = resp.data.match(/cpo.src\s*=\s*"\/cdn-cgi\/challenge-platform(\/h\/.)?\/orchestrate\/jsch\/v1"/mi)
+			if (match) {
+				if (match[1]) {
+					console.log('============== Platform: ' + match[1] + ' ==============')
+					return this._solveIuam('/cdn-cgi/challenge-platform' + match[1])
 				} else {
+					console.log('============== Platform: / ==============')
 					return this._solveIuam('/cdn-cgi/challenge-platform')
 				}
 			} else if (/cpo.src\s*=\s*"\/cdn-cgi\/challenge-platform\/orchestrate\/captcha\/v1"/gmi.test(resp.data)) {
