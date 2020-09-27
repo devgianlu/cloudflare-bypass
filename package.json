@@ -22,7 +22,8 @@
     "axios": "^0.20.0",
     "jsdom": "^16.4.0",
     "lz-string": "^1.4.4",
-    "probe-image-size": "^5.0.0"
+    "probe-image-size": "^5.0.0",
+    "winston": "^3.3.3"
   },
   "devDependencies": {
     "eslint": "^7.9.0",

@@ -3,6 +3,7 @@ const axios = require('axios')
 const vm = require('vm')
 const {JSDOM} = require('jsdom')
 const lz = require('./lz')
+const log = require('./logging')
 const patchJsDom = require('./jsdom-patches')
 const patchChallenges = require('./challenge-patches')
 const {addSuccessfulAttempt, addFailedAttempt} = require('./debugging')
@@ -40,7 +41,7 @@ class ManagedCookies {
 		return undefined
 	}
 
-	cookieHeader(logCookies = true) {
+	cookieHeader(logPrefix = undefined) {
 		if (Object.keys(this._cookies).length === 0)
 			return ''
 
@@ -49,7 +50,7 @@ class ManagedCookies {
 			str += key + '=' + this._cookies[key] + ';'
 
 		str = str.substring(0, str.length - 1)
-		if (logCookies) console.debug('Cookie header:', str)
+		if (logPrefix) log.debug(logPrefix + 'Cookie header: ' + str)
 		return str
 	}
 }
@@ -62,7 +63,6 @@ class RequestsLog {
 	put(resp) {
 		function headersLength() {
 			const headers = resp.request.res.rawHeaders
-			console.log(headers)
 			let length = 0
 			for (let i = 0; i < headers.length; i += 2) {
 				length += headers[i].length + 2 + headers[i + 1].length + 2
@@ -104,8 +104,6 @@ class RequestsLog {
 		this._list = []
 	}
 }
-
-// TODO: Slow down the process
 
 class CloudflareBypass {
 	constructor(url) {
@@ -185,83 +183,80 @@ class CloudflareBypass {
 	}
 
 	async _sendCompressed(url, data, alphabet, raySuffix) {
-		console.log('================ SENDING RESPONSE ================')
+		const logPrefix = '(' + url.substring(url.indexOf('ov1/') + 3) + ') '
+
+		log.http(logPrefix + 'Sending response...')
 
 		const payload = lz.compress(JSON.stringify(data), alphabet).replace('+', '%2b')
-		console.debug('Crafted payload:', payload)
+		log.verbose(logPrefix + 'Crafted payload: ' + payload)
 
-		console.debug('Sending to', url)
 		const chResp = await this._axios.request({
 			method: 'POST',
 			url: url,
 			headers: {
-				'Cookie': this._cookies.cookieHeader(),
+				'Cookie': this._cookies.cookieHeader(logPrefix),
 				'Content-type': 'application/x-www-form-urlencoded',
 				'CF-Challenge': this._opts['cHash']
 			},
 			data: 'v_' + this._opts['cRay'] + '=' + payload
 		})
+		log.http(logPrefix + 'Sent response, status: ' + chResp.status)
 
-		console.log('Response code:', chResp.status)
-
-		const seq = this._cookies.grabFrom('cf_chl_seq_' + this._opts['cHash'], chResp)
-		console.debug('cf_chl_seq:', seq)
-
+		this._cookies.grabFrom('cf_chl_seq_' + this._opts['cHash'], chResp)
 		if (chResp.status !== 200)
 			throw new Error('Bad challenge response: ' + chResp.status)
 
-		console.log('==================================================\n')
 		return this._decodeResponse(chResp.data, raySuffix)
 	}
 
-	async _execScript(chScript) {
-		console.log('================ EXECUTING SCRIPT ================')
-		console.debug(chScript, '\n')
-
-		let sendUrl = null
+	async _execScript(scriptStr, window = {}) {
 		const chContext = this._jsdom.getInternalVMContext()
 		chContext.window['_cf_chl_opt'] = this._opts
 		chContext.window['_cf_chl_ctx'] = this._ctx
-		chContext.window['sendRequest'] = function (url) {
-			sendUrl = url
+		Object.assign(chContext.window, window)
+
+		const script = new vm.Script(scriptStr)
+		return script.runInNewContext(chContext)
+	}
+
+	async _execChallenge(chScript) {
+		let sendUrl = null
+		const window = {
+			sendRequest: function (url) {
+				sendUrl = url
+			}
 		}
 
 		this._cookies.putProgram('b' + this._ctx.chLog.c)
 
-		const script = new vm.Script(chScript)
-		script.runInNewContext(chContext)
-
+		await this._execScript(chScript, window)
 		await new Promise((resolve) => setTimeout(resolve, 1000))
 
 		this._cookies.putProgram('a' + this._ctx.chLog.c)
 
 		patchChallenges(this._ctx, {reqLog: this._reqLog})
-
-		console.debug('Context after:', JSON.stringify(this._ctx))
-		console.log('Send URL:', sendUrl)
-		console.log('==================================================\n')
+		log.verbose('(' + this._opts['cHash'] + ') Context after script exec: ' + JSON.stringify(this._ctx), this._ctx)
 		return sendUrl
 	}
 
 	async _solveIuam(chPlatUrl) {
-		console.debug('Solving IUAM challenge.')
+		log.info('Solving IUAM challenge...')
 
-		const scriptData = (await this._axios.request({
+		const scriptResp = await this._axios.request({
 			method: 'GET',
 			url: chPlatUrl + '/orchestrate/jsch/v1',
 			headers: {
 				'Cookie': this._cookies.cookieHeader(false)
 			}
-		})).data
+		})
 
-		let extracted
-		try {
-			extracted = this._extractFromScript(scriptData)
-			console.debug('Extracted script values:', JSON.stringify(extracted))
-		} catch (e) {
-			console.error(scriptData)
-			throw e
-		}
+		if (scriptResp.status !== 200)
+			throw new Error('Bad orchestrate script status: ' + scriptResp.status)
+
+		log.silly('Requested orchestrate script.', scriptResp.data)
+
+		const extracted = this._extractFromScript(scriptResp.data)
+		log.verbose('Extracted script values: ' + JSON.stringify(extracted), extracted)
 
 		this._ctx = {
 			chLog: {'c': 0},
@@ -278,33 +273,65 @@ class CloudflareBypass {
 		while (url) {
 			const chScript = await this._sendCompressed(url, this._ctx, extracted['lzAlphabet'], 0)
 			if (chScript.indexOf('window.location.reload();') !== -1) {
+				log.info('(' + this._opts['cHash'] + ') Failed solving challenge. Reloading.')
 				addFailedAttempt(this._ctx)
-				console.debug('=========== RELOAD ===========')
 
 				this._cookies.putProgram('F' + this._ctx.chLog.c)
 				return this.request()
 			} else if (chScript.indexOf('formEl.submit();') !== -1) {
+				const logPrefix = '(' + this._opts['cHash'] + ') '
+				log.info(logPrefix + 'Solved challenge.')
 				addSuccessfulAttempt(this._ctx)
 
-				if (chScript.indexOf('cpReturnEl') !== -1)
-					console.log('=========== CAPTCHA ===========')
+				log.silly(logPrefix + 'Executing final script...')
+				await this._execScript(chScript.replace('formEl.submit();', ''), {_cf_chl_done_ran: true})
 
-				console.debug('FINAL_SCRIPT', chScript)
-				break
+				const form = await this._execScript('new FormData(document.getElementById("challenge-form")).entries();')
+				const result = {}
+				for (let pair of form) result[pair[0]] = pair[1]
+				log.verbose(logPrefix + 'Challenge form data: ' + JSON.stringify(result), result)
+
+				await new Promise((resolve) => setTimeout(resolve, 3000 /* Should be 4000, but we waited 1000 already */))
+
+				const formUrl = this._jsdom.window.document.getElementById('challenge-form').action
+				log.http(logPrefix + 'Sending form to ' + formUrl)
+				const resp = await this._axios.request({
+					method: 'POST',
+					url: formUrl,
+					headers: {
+						'Content-type': 'application/x-www-form-urlencoded',
+						'Cookie': this._cookies.cookieHeader(false)
+					},
+					data: (function (obj) {
+						let urlEncodedDataPairs = []
+						for (let name in obj) urlEncodedDataPairs.push(encodeURIComponent(name) + '=' + encodeURIComponent(obj[name]))
+						return urlEncodedDataPairs.join('&').replace(/%20/g, '+')
+					}(result))
+				})
+
+				if (resp.status === 403)
+					throw new Error('Captcha challenge not supported!')
+
+				if (resp.status === 301) {
+					const cfClearance = this._cookies.grabFrom('cf_clearance', resp)
+					log.info(logPrefix + 'CF clearance: ' + cfClearance)
+					return {cfClearance: cfClearance, cfdUid: this._cookies.get('__cfduid')}
+				} else {
+					throw new Error('Unknown challenge response code: ' + resp.status)
+				}
 			}
 
-			url = await this._execScript(chScript)
+			log.silly('(' + this._opts['cHash'] + ') Executing challenge script...', chScript)
+			url = await this._execChallenge(chScript)
 			if (!url)
 				throw new Error('Couldn\'t complete all challenges.')
 		}
-
-		console.log('DONEEEEEEEEEEEEEEEEEEEEEEEEEEE')
-		this._jsdom.window.close()
 	}
 
 	async request() {
 		this._reqLog.clear()
 
+		log.info('Requesting index page...')
 		const resp = await this._axios.request({
 			method: 'GET',
 			url: '/',
@@ -314,11 +341,12 @@ class CloudflareBypass {
 		})
 
 		const cfduid = this._cookies.grabFrom('__cfduid', resp) || this._cookies.get('__cfduid')
-		console.debug('Cloudflare UID:', cfduid)
+		log.verbose('Cloudflare UID: ' + cfduid)
 
 		this._opts = this._extractFromPage(resp.data)
-		console.debug('Extracted options:', JSON.stringify(this._opts))
+		log.verbose('Extracted options: ' + JSON.stringify(this._opts), this._opts)
 
+		log.silly('Requesting js/nocookie/transparent.gif...')
 		await this._axios.request({
 			method: 'GET', url: '/cdn-cgi/images/trace/jschal/js/nocookie/transparent.gif?ray=' + this._opts['cRay'],
 			headers: {
@@ -327,6 +355,7 @@ class CloudflareBypass {
 			}
 		})
 
+		log.silly('Requesting nojs/transparent.gif...')
 		await this._axios.request({
 			method: 'GET', url: '/cdn-cgi/images/trace/jschal/nojs/transparent.gif?ray=' + this._opts['cRay'],
 			headers: {
@@ -341,22 +370,26 @@ class CloudflareBypass {
 		})
 		patchJsDom(this._jsdom)
 
-		if (resp.headers['server'].startsWith('cloudflare') && (resp.status === 429 || resp.status === 503)) {
-			let match = resp.data.match(/cpo.src\s*=\s*"\/cdn-cgi\/challenge-platform(\/h\/.)?\/orchestrate\/jsch\/v1"/mi)
-			if (match) {
-				if (match[1]) {
-					console.log('============== Platform: ' + match[1] + ' ==============')
-					return this._solveIuam('/cdn-cgi/challenge-platform' + match[1])
+		try {
+			if (resp.headers['server'].startsWith('cloudflare') && (resp.status === 429 || resp.status === 503)) {
+				let match = resp.data.match(/cpo.src\s*=\s*"\/cdn-cgi\/challenge-platform(\/h\/.)?\/orchestrate\/jsch\/v1"/mi)
+				if (match) {
+					if (match[1]) {
+						log.info('Using platform: ' + match[1])
+						return await this._solveIuam('/cdn-cgi/challenge-platform' + match[1])
+					} else {
+						log.info('Using default platform')
+						return await this._solveIuam('/cdn-cgi/challenge-platform')
+					}
+				} else if (/cpo.src\s*=\s*"\/cdn-cgi\/challenge-platform\/orchestrate\/captcha\/v1"/gmi.test(resp.data)) {
+					throw new Error('Captcha challenge not supported!')
 				} else {
-					console.log('============== Platform: / ==============')
-					return this._solveIuam('/cdn-cgi/challenge-platform')
+					console.error(resp.data)
+					throw new Error('Unknown challenge.')
 				}
-			} else if (/cpo.src\s*=\s*"\/cdn-cgi\/challenge-platform\/orchestrate\/captcha\/v1"/gmi.test(resp.data)) {
-				throw new Error('Captcha challenge not supported!')
-			} else {
-				console.error(resp.data)
-				throw new Error('Unknown challenge.')
 			}
+		} finally {
+			this._jsdom.window.close()
 		}
 
 		return resp

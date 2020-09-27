@@ -39,7 +39,6 @@ PATCHES['ec60888a'] = function (ctx, entry, state) {
 
 	list.push({t: 'mark', 'n': 'cp-n-' + parseInt(ctx.cNounce, 10)})
 
-	console.debug('ec60888a:', list)
 	entry['p'] = list
 }
 
