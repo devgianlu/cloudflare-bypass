@@ -60,13 +60,23 @@ class RequestsLog {
 	}
 
 	put(resp) {
+		function headersLength() {
+			const headers = resp.request.res.rawHeaders
+			console.log(headers)
+			let length = 0
+			for (let i = 0; i < headers.length; i += 2) {
+				length += headers[i].length + 2 + headers[i + 1].length + 2
+			}
+			return length
+		}
+
 		let bodyLength = parseInt(resp.headers['content-length'])
 		if (!bodyLength) bodyLength = resp.data.length // Must be the encoded length
 
 		let totalLength = 0
-		totalLength += 'HTTP/1.1 200 OK\r\n'.length
-		totalLength += resp.request.res.rawHeaders.join('\n\r').length
-		totalLength += '\n\r\n\r'.length
+		totalLength += 15 // HTTP/1.1 200 OK\n\r
+		totalLength += headersLength()
+		totalLength += 2 // \n\r
 		totalLength += bodyLength
 
 		this._list.push({
@@ -89,6 +99,10 @@ class RequestsLog {
 		if (first) return undefined
 		else return list
 	}
+
+	clear() {
+		this._list = []
+	}
 }
 
 // TODO: Slow down the process
@@ -100,6 +114,7 @@ class CloudflareBypass {
 		this._reqLog = new RequestsLog()
 		this._axios = axios.create({
 			baseURL: url,
+			decompress: false,
 			validateStatus: function () {
 				return true
 			}
@@ -112,7 +127,6 @@ class CloudflareBypass {
 			config.headers['Referer'] = url
 			config.headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8'
 			config.headers['Accept-Language'] = 'en-US,en;q=0.9'
-			// config.headers['Accept-Encoding'] = 'gzip, deflate' // TODO: br
 			return config
 		}, function (error) {
 			return Promise.reject(error)
@@ -261,16 +275,16 @@ class CloudflareBypass {
 		this._cookies.putProgram('e')
 
 		let url = chPlatUrl + '/generate/ov1' + extracted['challengePath'] + this._opts['cRay'] + '/' + this._opts['cHash']
-		while (true) {
+		while (url) {
 			const chScript = await this._sendCompressed(url, this._ctx, extracted['lzAlphabet'], 0)
 			if (chScript.indexOf('window.location.reload();') !== -1) {
-				addFailedAttempt(this._ctx) // FIXME
-				console.debug('Told to reload.')
+				addFailedAttempt(this._ctx)
+				console.debug('=========== RELOAD ===========')
 
 				this._cookies.putProgram('F' + this._ctx.chLog.c)
 				return this.request()
 			} else if (chScript.indexOf('formEl.submit();') !== -1) {
-				addSuccessfulAttempt(this._ctx) // FIXME
+				addSuccessfulAttempt(this._ctx)
 
 				if (chScript.indexOf('cpReturnEl') !== -1)
 					console.log('=========== CAPTCHA ===========')
@@ -289,6 +303,8 @@ class CloudflareBypass {
 	}
 
 	async request() {
+		this._reqLog.clear()
+
 		const resp = await this._axios.request({
 			method: 'GET',
 			url: '/',

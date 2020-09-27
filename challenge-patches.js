@@ -7,7 +7,14 @@ PATCHES['23452c7d'] = function (ctx, entry) {
 
 PATCHES['ec60888a'] = function (ctx, entry, state) {
 	function makeResEntry(log, initiator) {
-		return {t: 'r', i: initiator, n: log.url, nh: log.httpVersion === '2' ? 'h2' : 'http/' + log.httpVersion, ts: log.totalLength, bs: log.contentLength}
+		return {
+			t: 'r',
+			i: initiator,
+			n: log.url,
+			nh: log.httpVersion === '2' ? 'h2' : 'http/' + log.httpVersion,
+			ts: log.totalLength,
+			bs: log.contentLength
+		}
 	}
 
 	const list = []
