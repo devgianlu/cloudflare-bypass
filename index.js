@@ -6,7 +6,7 @@ const lz = require('./lz')
 const log = require('./logging')
 const patchJsDom = require('./jsdom-patches')
 const patchChallenges = require('./challenge-patches')
-const {addSuccessfulAttempt, addFailedAttempt} = require('./debugging')
+const {addSuccessfulAttempt, addFailedAttempt, listChallengesIn} = require('./debugging')
 
 
 class ManagedCookies {
@@ -159,10 +159,10 @@ class CloudflareBypass {
 	_extractFromScript(data) {
 		const values = {}
 
-		let match = data.match(/a='(?<a>.*)'\.split/)
+		let match = data.match(/a='(?<a>.*)'\.split\('(.)'\)/)
 		if (!match) throw new Error('Couldn\'t find \'a\' array in script.')
 
-		const bigArray = match[1].split(',')
+		const bigArray = match[1].split(match[2])
 		for (let i = 0; i < bigArray.length; i++) {
 			if (!('lzAlphabet' in values) && bigArray[i].length === 65 && bigArray[i].indexOf('$') !== -1)
 				values['lzAlphabet'] = bigArray[i]
@@ -235,25 +235,23 @@ class CloudflareBypass {
 		this._cookies.putProgram('a' + this._ctx.chLog.c)
 
 		patchChallenges(this._ctx, {reqLog: this._reqLog})
-		log.verbose('(' + this._opts['cHash'] + ') Context after script exec: ' + JSON.stringify(this._ctx), this._ctx)
+		log.verbose('(' + this._opts['cHash'] + ') Context after script exec: ' + JSON.stringify(this._ctx))
 		return sendUrl
 	}
 
-	async _solveIuam(chPlatUrl) {
-		log.info('Solving IUAM challenge...')
-
+	async _initScript(chPlatUrl, type) {
 		const scriptResp = await this._axios.request({
 			method: 'GET',
-			url: chPlatUrl + '/orchestrate/jsch/v1',
+			url: chPlatUrl + '/orchestrate/' + type + '/v1',
 			headers: {
 				'Cookie': this._cookies.cookieHeader(false)
 			}
 		})
 
 		if (scriptResp.status !== 200)
-			throw new Error('Bad orchestrate script status: ' + scriptResp.status)
+			throw new Error('Bad (' + type + ') orchestrate script status: ' + scriptResp.status)
 
-		log.silly('Requested orchestrate script.', scriptResp.data)
+		log.silly('Requested (' + type + ') orchestrate script.', scriptResp.data)
 
 		const extracted = this._extractFromScript(scriptResp.data)
 		log.verbose('Extracted script values: ' + JSON.stringify(extracted), extracted)
@@ -267,13 +265,22 @@ class CloudflareBypass {
 		}
 		this._ctx.chLog[this._ctx.chLog.c++] = {'start': new Date().getTime()}
 
+		return extracted
+	}
+
+	async _solveIuam(chPlatUrl) {
+		log.info('Solving IUAM challenge...')
+
+		const extracted = await this._initScript(chPlatUrl, 'jsch')
+
 		this._cookies.putProgram('e')
 
 		let url = chPlatUrl + '/generate/ov1' + extracted['challengePath'] + this._opts['cRay'] + '/' + this._opts['cHash']
 		while (url) {
 			const chScript = await this._sendCompressed(url, this._ctx, extracted['lzAlphabet'], 0)
 			if (chScript.indexOf('window.location.reload();') !== -1) {
-				log.info('(' + this._opts['cHash'] + ') Failed solving challenge. Reloading.')
+				log.error(chScript)
+				log.info('(' + this._opts['cHash'] + ') Failed solving challenges (' + listChallengesIn(this._ctx).join(', ') + '). Reloading.')
 				addFailedAttempt(this._ctx)
 
 				this._cookies.putProgram('F' + this._ctx.chLog.c)
@@ -310,7 +317,7 @@ class CloudflareBypass {
 				})
 
 				if (resp.status === 403)
-					throw new Error('Captcha challenge not supported!')
+					return this._solveCaptcha(chPlatUrl)
 
 				if (resp.status === 301) {
 					const cfClearance = this._cookies.grabFrom('cf_clearance', resp)
@@ -321,25 +328,40 @@ class CloudflareBypass {
 				}
 			}
 
-			log.silly('(' + this._opts['cHash'] + ') Executing challenge script...', chScript)
+			log.silly('(' + this._opts['cHash'] + ') Executing challenge script...')
 			url = await this._execChallenge(chScript)
-			if (!url)
-				throw new Error('Couldn\'t complete all challenges.')
+			if (!url) {
+				addFailedAttempt(this._ctx)
+				log.error(chScript)
+				throw new Error('Couldn\'t complete all challenges (' + listChallengesIn(this._ctx).join(', ') + ').')
+			}
 		}
 	}
 
-	async request() {
-		this._reqLog.clear()
+	async _solveCaptcha(chPlatUrl) {
+		log.info('Solving Captcha challenge...')
 
-		log.info('Requesting index page...')
-		const resp = await this._axios.request({
-			method: 'GET',
-			url: '/',
-			headers: {
-				'Cookie': this._cookies.cookieHeader()
+		const extracted = await this._initScript(chPlatUrl, 'captcha')
+
+		this._cookies.putProgram('e')
+
+		let url = chPlatUrl + '/generate/ov1' + extracted['challengePath'] + this._opts['cRay'] + '/' + this._opts['cHash']
+		while (url) {
+			const chScript = await this._sendCompressed(url, this._ctx, extracted['lzAlphabet'], 0)
+			console.log('CAPTCHA SCRIPT', chScript)
+
+			// TODO: Challenges are the same as IUAM (last one should be final_ch_captcha.js)
+			
+			log.silly('(' + this._opts['cHash'] + ') Executing challenge script...', chScript)
+			url = await this._execChallenge(chScript)
+			if (!url) {
+				addFailedAttempt(this._ctx)
+				throw new Error('Couldn\'t complete all challenges (' + listChallengesIn(this._ctx).join(', ') + ').')
 			}
-		})
+		}
+	}
 
+	async _request(resp) {
 		const cfduid = this._cookies.grabFrom('__cfduid', resp) || this._cookies.get('__cfduid')
 		log.verbose('Cloudflare UID: ' + cfduid)
 
@@ -381,11 +403,20 @@ class CloudflareBypass {
 						log.info('Using default platform')
 						return await this._solveIuam('/cdn-cgi/challenge-platform')
 					}
-				} else if (/cpo.src\s*=\s*"\/cdn-cgi\/challenge-platform\/orchestrate\/captcha\/v1"/gmi.test(resp.data)) {
-					throw new Error('Captcha challenge not supported!')
 				} else {
-					console.error(resp.data)
-					throw new Error('Unknown challenge.')
+					match = resp.data(/cpo.src\s*=\s*"\/cdn-cgi\/challenge-platform(\/h\/.)?\/orchestrate\/captcha\/v1"/mi)
+					if (match) {
+						if (match[1]) {
+							log.info('Using platform: ' + match[1])
+							return await this._solveCaptcha('/cdn-cgi/challenge-platform' + match[1])
+						} else {
+							log.info('Using default platform')
+							return await this._solveCaptcha('/cdn-cgi/challenge-platform')
+						}
+					} else {
+						console.error(resp.data)
+						throw new Error('Unknown challenge.')
+					}
 				}
 			}
 		} finally {
@@ -393,6 +424,21 @@ class CloudflareBypass {
 		}
 
 		return resp
+	}
+
+	async request() {
+		this._reqLog.clear()
+
+		log.info('Requesting index page...')
+		const resp = await this._axios.request({
+			method: 'GET',
+			url: '/',
+			headers: {
+				'Cookie': this._cookies.cookieHeader()
+			}
+		})
+
+		return this._request(resp)
 	}
 }
 

@@ -68,5 +68,10 @@ function _save() {
 
 module.exports = {
 	addFailedAttempt: addFailedAttempt,
-	addSuccessfulAttempt: addSuccessfulAttempt
+	addSuccessfulAttempt: addSuccessfulAttempt,
+	listChallengesIn: function listChallengesIn(ctx) {
+		const list = []
+		for (let j = 0; j <= ctx.chC; j++) if (j.toString() in ctx) list.push(ctx[j.toString()].i)
+		return list
+	}
 }

@@ -1,6 +1,6 @@
 const winston = require('winston')
 const logger = winston.createLogger({
-	level: 'trace',
+	level: 'silly',
 	format: winston.format.combine(
 		winston.format.colorize(),
 		winston.format.simple()
