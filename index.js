@@ -22,6 +22,12 @@ class ManagedCookies {
 		this._cookies[name] = value
 	}
 
+	removeAll(remover) {
+		for (let key in this._cookies) {
+			if (remover(key)) delete this._cookies[key]
+		}
+	}
+
 	putProgram(value) {
 		this.put('cf_chl_prog', value)
 	}
@@ -254,7 +260,7 @@ class CloudflareBypass {
 		log.silly('Requested (' + type + ') orchestrate script.', scriptResp.data)
 
 		const extracted = this._extractFromScript(scriptResp.data)
-		log.verbose('Extracted script values: ' + JSON.stringify(extracted), extracted)
+		log.verbose('Extracted script values: ' + JSON.stringify(extracted))
 
 		this._ctx = {
 			chLog: {'c': 0},
@@ -316,8 +322,10 @@ class CloudflareBypass {
 					}(result))
 				})
 
-				if (resp.status === 403)
-					return this._solveCaptcha(chPlatUrl)
+				if (resp.status === 403) {
+					// FIXME: Request log issues (maybe)
+					return await this._request(resp)
+				}
 
 				if (resp.status === 301) {
 					const cfClearance = this._cookies.grabFrom('cf_clearance', resp)
@@ -331,9 +339,12 @@ class CloudflareBypass {
 			log.silly('(' + this._opts['cHash'] + ') Executing challenge script...')
 			url = await this._execChallenge(chScript)
 			if (!url) {
-				addFailedAttempt(this._ctx)
 				log.error(chScript)
-				throw new Error('Couldn\'t complete all challenges (' + listChallengesIn(this._ctx).join(', ') + ').')
+				log.info('(' + this._opts['cHash'] + ') Couldn\'t complete all challenges (' + listChallengesIn(this._ctx).join(', ') + '). Reloading.')
+				addFailedAttempt(this._ctx)
+
+				this._cookies.putProgram('F' + this._ctx.chLog.c)
+				return this.request()
 			}
 		}
 	}
@@ -350,11 +361,17 @@ class CloudflareBypass {
 			const chScript = await this._sendCompressed(url, this._ctx, extracted['lzAlphabet'], 0)
 			console.log('CAPTCHA SCRIPT', chScript)
 
-			// TODO: Challenges are the same as IUAM (last one should be final_ch_captcha.js)
+			if ((chScript.match(/setTimeout\(chl_done,0\)/g) || []).length === 3) {
+				console.log('YEEEEEEEEEEEEEEEEE')
+				// TODO: Now we render the captcha, we can probably hook `hcaptcha.render(id, opts)`
+				break
+			}
 			
 			log.silly('(' + this._opts['cHash'] + ') Executing challenge script...', chScript)
 			url = await this._execChallenge(chScript)
 			if (!url) {
+				// TODO: Better retry strategy (if possible)
+
 				addFailedAttempt(this._ctx)
 				throw new Error('Couldn\'t complete all challenges (' + listChallengesIn(this._ctx).join(', ') + ').')
 			}
@@ -362,6 +379,8 @@ class CloudflareBypass {
 	}
 
 	async _request(resp) {
+		this._cookies.removeAll((name) => {return name.startsWith('cf_chl_seq_')})
+
 		const cfduid = this._cookies.grabFrom('__cfduid', resp) || this._cookies.get('__cfduid')
 		log.verbose('Cloudflare UID: ' + cfduid)
 
@@ -393,9 +412,9 @@ class CloudflareBypass {
 		patchJsDom(this._jsdom)
 
 		try {
-			if (resp.headers['server'].startsWith('cloudflare') && (resp.status === 429 || resp.status === 503)) {
+			if (resp.headers['server'].startsWith('cloudflare') ) {
 				let match = resp.data.match(/cpo.src\s*=\s*"\/cdn-cgi\/challenge-platform(\/h\/.)?\/orchestrate\/jsch\/v1"/mi)
-				if (match) {
+				if (match && (resp.status === 429 || resp.status === 503)) {
 					if (match[1]) {
 						log.info('Using platform: ' + match[1])
 						return await this._solveIuam('/cdn-cgi/challenge-platform' + match[1])
@@ -404,8 +423,8 @@ class CloudflareBypass {
 						return await this._solveIuam('/cdn-cgi/challenge-platform')
 					}
 				} else {
-					match = resp.data(/cpo.src\s*=\s*"\/cdn-cgi\/challenge-platform(\/h\/.)?\/orchestrate\/captcha\/v1"/mi)
-					if (match) {
+					match = resp.data.match(/cpo.src\s*=\s*"\/cdn-cgi\/challenge-platform(\/h\/.)?\/orchestrate\/captcha\/v1"/mi)
+					if (match && resp.status === 403) {
 						if (match[1]) {
 							log.info('Using platform: ' + match[1])
 							return await this._solveCaptcha('/cdn-cgi/challenge-platform' + match[1])
