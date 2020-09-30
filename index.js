@@ -362,8 +362,19 @@ class CloudflareBypass {
 			console.log('CAPTCHA SCRIPT', chScript)
 
 			if ((chScript.match(/setTimeout\(chl_done,0\)/g) || []).length === 3) {
-				console.log('YEEEEEEEEEEEEEEEEE')
-				// TODO: Now we render the captcha, we can probably hook `hcaptcha.render(id, opts)`
+				let renderOpts = null
+				const render = function(id, opts) {
+					renderOpts = opts
+				}
+				
+				await this._execScript(chScript, {hcaptcha: {render: render}, _cf_chl_hloaded: true})
+				await new Promise((resolve) => setTimeout(resolve, 100))
+
+				const siteKey = renderOpts.sitekey
+				log.info('(' + this._opts['cHash'] + ') Site key is ' + siteKey)
+
+				// TODO: Solve captcha in some way
+
 				break
 			}
 			
