@@ -17,7 +17,13 @@ const ENABLED = true
 /**
  * @type {?Data}
  */
-const DATA = ENABLED ? JSON.parse(fs.readFileSync('./debug.json').toString()) : null
+const DATA = ENABLED ? (function () {
+	try {
+		return JSON.parse(fs.readFileSync('./debug.json').toString())
+	} catch (e) {
+		return {'challenges': {'all': [], 'ok': [], 'failed': []}, 'success': [], 'failed': []}
+	}
+})() : null
 
 function addFailedAttempt(ctx) {
 	if (!ENABLED) return
