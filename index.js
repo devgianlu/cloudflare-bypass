@@ -7,6 +7,7 @@ const log = require('./logging')
 const patchJsDom = require('./jsdom-patches')
 const patchChallenges = require('./challenge-patches')
 const {addSuccessfulAttempt, addFailedAttempt, listChallengesIn} = require('./debugging')
+const CaptchaHarvester = require('./captcha-harvester')
 
 
 class ManagedCookies {
@@ -113,6 +114,7 @@ class RequestsLog {
 
 class CloudflareBypass {
 	constructor(url) {
+		this._url = url
 		this._userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36' // FIXME
 		this._cookies = new ManagedCookies()
 		this._reqLog = new RequestsLog()
@@ -236,7 +238,12 @@ class CloudflareBypass {
 		this._cookies.putProgram('b' + this._ctx.chLog.c)
 
 		await this._execScript(chScript, window)
-		await new Promise((resolve) => setTimeout(resolve, 1000))
+
+		let maxWait = 1000
+		while (!sendUrl && maxWait > 0) {
+			await new Promise((resolve) => setTimeout(resolve, 50))
+			maxWait -= 50
+		}
 
 		this._cookies.putProgram('a' + this._ctx.chLog.c)
 
@@ -359,38 +366,70 @@ class CloudflareBypass {
 		let url = chPlatUrl + '/generate/ov1' + extracted['challengePath'] + this._opts['cRay'] + '/' + this._opts['cHash']
 		while (url) {
 			const chScript = await this._sendCompressed(url, this._ctx, extracted['lzAlphabet'], 0)
-			console.log('CAPTCHA SCRIPT', chScript)
+			console.log('CAPTCHA SCRIPT', chScript) // FIXME
 
 			if ((chScript.match(/setTimeout\(chl_done,0\)/g) || []).length === 3) {
 				let renderOpts = null
-				const render = function(id, opts) {
+				const render = function (id, opts) {
 					renderOpts = opts
 				}
-				
-				await this._execScript(chScript, {hcaptcha: {render: render}, _cf_chl_hloaded: true})
-				await new Promise((resolve) => setTimeout(resolve, 100))
+
+				let sendUrl = null
+				await this._execScript(chScript, {
+					hcaptcha: {render: render},
+					sendRequest: function (url) {
+						sendUrl = url
+					},
+					_cf_chl_hloaded: true
+				})
 
 				const siteKey = renderOpts.sitekey
 				log.info('(' + this._opts['cHash'] + ') Site key is ' + siteKey)
 
-				// TODO: Solve captcha in some way
+				const harvester = new CaptchaHarvester(this._url, siteKey)
+				const captchaResult = await harvester.solveCaptcha()
+				if (captchaResult === 'error' || captchaResult === 'expired')
+					log.info('(' + this._opts['cHash'] + ') Failed solving captcha: ' + captchaResult)
+				else
+					log.info('(' + this._opts['cHash'] + ') Solved captcha, token is ' + captchaResult)
 
-				break
+				renderOpts.callback(captchaResult)
+
+				while (!sendUrl) {
+					await new Promise((resolve) => setTimeout(resolve, 50))
+				}
+
+				this._cookies.putProgram('a' + this._ctx.chLog.c)
+				patchChallenges(this._ctx, {reqLog: this._reqLog})
+
+				log.verbose('(' + this._opts['cHash'] + ') Context after captcha solved: ' + JSON.stringify(this._ctx))
+				continue
+			} else if (chScript.indexOf('window.location.reload();') !== -1) {
+				log.error(chScript)
+				log.info('(' + this._opts['cHash'] + ') Failed solving challenges (' + listChallengesIn(this._ctx).join(', ') + '). Reloading.')
+				addFailedAttempt(this._ctx)
+
+				this._cookies.putProgram('F' + this._ctx.chLog.c)
+				return this.request()
 			}
-			
+
 			log.silly('(' + this._opts['cHash'] + ') Executing challenge script...', chScript)
 			url = await this._execChallenge(chScript)
 			if (!url) {
-				// TODO: Better retry strategy (if possible)
-
+				log.error(chScript)
+				log.info('(' + this._opts['cHash'] + ') Couldn\'t complete all challenges (' + listChallengesIn(this._ctx).join(', ') + '). Reloading.')
 				addFailedAttempt(this._ctx)
-				throw new Error('Couldn\'t complete all challenges (' + listChallengesIn(this._ctx).join(', ') + ').')
+
+				this._cookies.putProgram('F' + this._ctx.chLog.c)
+				return this.request()
 			}
 		}
 	}
 
 	async _request(resp) {
-		this._cookies.removeAll((name) => {return name.startsWith('cf_chl_seq_')})
+		this._cookies.removeAll((name) => {
+			return name.startsWith('cf_chl_seq_')
+		})
 
 		const cfduid = this._cookies.grabFrom('__cfduid', resp) || this._cookies.get('__cfduid')
 		log.verbose('Cloudflare UID: ' + cfduid)
@@ -423,7 +462,7 @@ class CloudflareBypass {
 		patchJsDom(this._jsdom)
 
 		try {
-			if (resp.headers['server'].startsWith('cloudflare') ) {
+			if (resp.headers['server'].startsWith('cloudflare')) {
 				let match = resp.data.match(/cpo.src\s*=\s*"\/cdn-cgi\/challenge-platform(\/h\/.)?\/orchestrate\/jsch\/v1"/mi)
 				if (match && (resp.status === 429 || resp.status === 503)) {
 					if (match[1]) {
