@@ -217,7 +217,7 @@ class CloudflareBypass {
 		return this._decodeResponse(chResp.data, raySuffix)
 	}
 
-	async _execScript(scriptStr, window = {}) {
+	_execScript(scriptStr, window = {}) {
 		const chContext = this._jsdom.getInternalVMContext()
 		chContext.window['_cf_chl_opt'] = this._opts
 		chContext.window['_cf_chl_ctx'] = this._ctx
@@ -227,7 +227,7 @@ class CloudflareBypass {
 		return script.runInNewContext(chContext)
 	}
 
-	async _execChallenge(chScript) {
+	async _execChallenge(chScript, maxWait = 1000) {
 		let sendUrl = null
 		const window = {
 			sendRequest: function (url) {
@@ -237,9 +237,8 @@ class CloudflareBypass {
 
 		this._cookies.putProgram('b' + this._ctx.chLog.c)
 
-		await this._execScript(chScript, window)
+		this._execScript(chScript, window)
 
-		let maxWait = 1000
 		while (!sendUrl && maxWait > 0) {
 			await new Promise((resolve) => setTimeout(resolve, 50))
 			maxWait -= 50
@@ -281,10 +280,10 @@ class CloudflareBypass {
 		return extracted
 	}
 
-	async _solveIuam(chPlatUrl) {
-		log.info('Solving IUAM challenge...')
+	async _solve(chPlatUrl, type) {
+		log.info('Solving ' + type + ' challenge...')
 
-		const extracted = await this._initScript(chPlatUrl, 'jsch')
+		const extracted = await this._initScript(chPlatUrl, type)
 
 		this._cookies.putProgram('e')
 
@@ -304,9 +303,9 @@ class CloudflareBypass {
 				addSuccessfulAttempt(this._ctx)
 
 				log.silly(logPrefix + 'Executing final script...')
-				await this._execScript(chScript.replace('formEl.submit();', ''), {_cf_chl_done_ran: true})
+				this._execScript(chScript.replace('formEl.submit();', ''), {_cf_chl_done_ran: true})
 
-				const form = await this._execScript('new FormData(document.getElementById("challenge-form")).entries();')
+				const form = this._execScript('new FormData(document.getElementById("challenge-form")).entries();')
 				const result = {}
 				for (let pair of form) result[pair[0]] = pair[1]
 				log.verbose(logPrefix + 'Challenge form data: ' + JSON.stringify(result), result)
@@ -341,41 +340,16 @@ class CloudflareBypass {
 				} else {
 					throw new Error('Unknown challenge response code: ' + resp.status)
 				}
-			}
-
-			log.silly('(' + this._opts['cHash'] + ') Executing challenge script...')
-			url = await this._execChallenge(chScript)
-			if (!url) {
-				log.error(chScript)
-				log.info('(' + this._opts['cHash'] + ') Couldn\'t complete all challenges (' + listChallengesIn(this._ctx).join(', ') + '). Reloading.')
-				addFailedAttempt(this._ctx)
-
-				this._cookies.putProgram('F' + this._ctx.chLog.c)
-				return this.request()
-			}
-		}
-	}
-
-	async _solveCaptcha(chPlatUrl) {
-		log.info('Solving Captcha challenge...')
-
-		const extracted = await this._initScript(chPlatUrl, 'captcha')
-
-		this._cookies.putProgram('e')
-
-		let url = chPlatUrl + '/generate/ov1' + extracted['challengePath'] + this._opts['cRay'] + '/' + this._opts['cHash']
-		while (url) {
-			const chScript = await this._sendCompressed(url, this._ctx, extracted['lzAlphabet'], 0)
-			console.log('CAPTCHA SCRIPT', chScript) // FIXME
-
-			if ((chScript.match(/setTimeout\(chl_done,0\)/g) || []).length === 3) {
+			} else 	if ((chScript.match(/setTimeout\(chl_done,0\)/g) || []).length === 3) {
 				let renderOpts = null
 				const render = function (id, opts) {
 					renderOpts = opts
 				}
 
+				this._cookies.putProgram('b' + this._ctx.chLog.c)
+
 				let sendUrl = null
-				await this._execScript(chScript, {
+				this._execScript(chScript, {
 					hcaptcha: {render: render},
 					sendRequest: function (url) {
 						sendUrl = url
@@ -401,19 +375,13 @@ class CloudflareBypass {
 
 				this._cookies.putProgram('a' + this._ctx.chLog.c)
 				patchChallenges(this._ctx, {reqLog: this._reqLog})
-
 				log.verbose('(' + this._opts['cHash'] + ') Context after captcha solved: ' + JSON.stringify(this._ctx))
-				continue
-			} else if (chScript.indexOf('window.location.reload();') !== -1) {
-				log.error(chScript)
-				log.info('(' + this._opts['cHash'] + ') Failed solving challenges (' + listChallengesIn(this._ctx).join(', ') + '). Reloading.')
-				addFailedAttempt(this._ctx)
 
-				this._cookies.putProgram('F' + this._ctx.chLog.c)
-				return this.request()
+				url = sendUrl
+				continue
 			}
 
-			log.silly('(' + this._opts['cHash'] + ') Executing challenge script...', chScript)
+			log.silly('(' + this._opts['cHash'] + ') Executing challenge script...')
 			url = await this._execChallenge(chScript)
 			if (!url) {
 				log.error(chScript)
@@ -467,20 +435,20 @@ class CloudflareBypass {
 				if (match && (resp.status === 429 || resp.status === 503)) {
 					if (match[1]) {
 						log.info('Using platform: ' + match[1])
-						return await this._solveIuam('/cdn-cgi/challenge-platform' + match[1])
+						return await this._solve('/cdn-cgi/challenge-platform' + match[1], 'jsch')
 					} else {
 						log.info('Using default platform')
-						return await this._solveIuam('/cdn-cgi/challenge-platform')
+						return await this._solve('/cdn-cgi/challenge-platform', 'jsch')
 					}
 				} else {
 					match = resp.data.match(/cpo.src\s*=\s*"\/cdn-cgi\/challenge-platform(\/h\/.)?\/orchestrate\/captcha\/v1"/mi)
 					if (match && resp.status === 403) {
 						if (match[1]) {
 							log.info('Using platform: ' + match[1])
-							return await this._solveCaptcha('/cdn-cgi/challenge-platform' + match[1])
+							return await this._solve('/cdn-cgi/challenge-platform' + match[1], 'captcha')
 						} else {
 							log.info('Using default platform')
-							return await this._solveCaptcha('/cdn-cgi/challenge-platform')
+							return await this._solve('/cdn-cgi/challenge-platform', 'captcha')
 						}
 					} else {
 						console.error(resp.data)
