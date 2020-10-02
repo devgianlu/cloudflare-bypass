@@ -37,7 +37,7 @@ PATCHES['ec60888a'] = function (ctx, entry, state) {
 		list.push(makeResEntry(logs[i], 'xmlhttprequest'))
 	}
 
-	list.push({t: 'mark', 'n': 'cp-n-' + parseInt(ctx.cNounce, 10)})
+	list.push({t: 'm', n: 'cp-n-' + parseInt(ctx.cNounce, 10)})
 
 	entry['p'] = list
 }

@@ -281,7 +281,8 @@ class CloudflareBypass {
 	}
 
 	async _solve(chPlatUrl, type) {
-		log.info('Solving ' + type + ' challenge...')
+		const logPrefix = '(' + this._opts['cHash'] + ') '
+		log.info(logPrefix+'Solving ' + type + ' challenge...')
 
 		const extracted = await this._initScript(chPlatUrl, type)
 
@@ -292,14 +293,13 @@ class CloudflareBypass {
 			const chScript = await this._sendCompressed(url, this._ctx, extracted['lzAlphabet'], 0)
 			if (chScript.indexOf('window.location.reload();') !== -1) {
 				log.error(chScript)
-				log.info('(' + this._opts['cHash'] + ') Failed solving challenges (' + listChallengesIn(this._ctx).join(', ') + '). Reloading.')
+				log.info(logPrefix + 'Failed solving challenges (' + listChallengesIn(this._ctx).join(', ') + '). Reloading.')
 				addFailedAttempt(this._ctx)
 
 				this._cookies.putProgram('F' + this._ctx.chLog.c)
 				return this.request()
 			} else if (chScript.indexOf('formEl.submit();') !== -1) {
-				const logPrefix = '(' + this._opts['cHash'] + ') '
-				log.info(logPrefix + 'Solved challenge.')
+				log.info(logPrefix + 'Solved challenges (' + listChallengesIn(this._ctx).join(', ') + ').')
 				addSuccessfulAttempt(this._ctx)
 
 				log.silly(logPrefix + 'Executing final script...')
@@ -328,6 +328,8 @@ class CloudflareBypass {
 					}(result))
 				})
 
+				log.http(logPrefix + 'Sent form, status: ' + resp.status)
+
 				if (resp.status === 403) {
 					// FIXME: Request log issues (maybe)
 					return await this._request(resp)
@@ -340,7 +342,7 @@ class CloudflareBypass {
 				} else {
 					throw new Error('Unknown challenge response code: ' + resp.status)
 				}
-			} else 	if ((chScript.match(/setTimeout\(chl_done,0\)/g) || []).length === 3) {
+			} else if ((chScript.match(/setTimeout\(chl_done,0\)/g) || []).length === 3) {
 				let renderOpts = null
 				const render = function (id, opts) {
 					renderOpts = opts
@@ -358,14 +360,14 @@ class CloudflareBypass {
 				})
 
 				const siteKey = renderOpts.sitekey
-				log.info('(' + this._opts['cHash'] + ') Site key is ' + siteKey)
+				log.info(logPrefix + 'Site key is ' + siteKey)
 
 				const harvester = new CaptchaHarvester(this._url, siteKey)
 				const captchaResult = await harvester.solveCaptcha()
 				if (captchaResult === 'error' || captchaResult === 'expired')
-					log.info('(' + this._opts['cHash'] + ') Failed solving captcha: ' + captchaResult)
+					log.info(logPrefix + 'Failed solving captcha: ' + captchaResult)
 				else
-					log.info('(' + this._opts['cHash'] + ') Solved captcha, token is ' + captchaResult)
+					log.info(logPrefix + 'Solved captcha, token is ' + captchaResult)
 
 				renderOpts.callback(captchaResult)
 
@@ -375,17 +377,17 @@ class CloudflareBypass {
 
 				this._cookies.putProgram('a' + this._ctx.chLog.c)
 				patchChallenges(this._ctx, {reqLog: this._reqLog})
-				log.verbose('(' + this._opts['cHash'] + ') Context after captcha solved: ' + JSON.stringify(this._ctx))
+				log.verbose(logPrefix + 'Context after captcha solved: ' + JSON.stringify(this._ctx))
 
 				url = sendUrl
 				continue
 			}
 
-			log.silly('(' + this._opts['cHash'] + ') Executing challenge script...')
+			log.silly(logPrefix + 'Executing challenge script...')
 			url = await this._execChallenge(chScript)
 			if (!url) {
 				log.error(chScript)
-				log.info('(' + this._opts['cHash'] + ') Couldn\'t complete all challenges (' + listChallengesIn(this._ctx).join(', ') + '). Reloading.')
+				log.info(logPrefix + 'Couldn\'t complete all challenges (' + listChallengesIn(this._ctx).join(', ') + '). Reloading.')
 				addFailedAttempt(this._ctx)
 
 				this._cookies.putProgram('F' + this._ctx.chLog.c)
