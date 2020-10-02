@@ -362,7 +362,7 @@ class CloudflareBypass {
 				const siteKey = renderOpts.sitekey
 				log.info(logPrefix + 'Site key is ' + siteKey)
 
-				const harvester = new CaptchaHarvester(this._url, siteKey)
+				const harvester = new CaptchaHarvester(this._url, siteKey, this._userAgent)
 				const captchaResult = await harvester.solveCaptcha()
 				if (captchaResult === 'error' || captchaResult === 'expired')
 					log.info(logPrefix + 'Failed solving captcha: ' + captchaResult)

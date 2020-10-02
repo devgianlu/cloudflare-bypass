@@ -41,9 +41,9 @@ queue.push(function () {
 				var A = document.getElementById("challenge-form");
 				if (A) {
 					document.getElementById("yjs-content") ?
-						A["innerHTML"] += "<div class=\"cf-content\"><p style=\"background-color:#de5052;border-color:#521010;color: #fff;\" class=\"cf-alertcf-alert-error\">&#35813;&#32593;&#31449;&#36164;&#28304;&#26080;&#27861;&#36890;&#36807;&#27492;&#22320;&#22336;&#35775;&#38382;&#12290;</p></div>"
+						A["innerHTML"] += "<div class=\"cf-content\"><p style=\"background-color:#de5052;border-color:#521010;color: #fff;\" class=\"cf-alert cf-alert-error\">&#35813;&#32593;&#31449;&#36164;&#28304;&#26080;&#27861;&#36890;&#36807;&#27492;&#22320;&#22336;&#35775;&#38382;&#12290;</p></div>"
 						:
-						A["innerHTML"] += "<div class=\"cf-content\"><p style=\"background-color:#de5052;border-color:#521010;color: #fff;\" class=\"cf-alertcf-alert-error\">This web property is not accessible via this address.</p></div>"
+						A["innerHTML"] += "<div class=\"cf-content\"><p style=\"background-color:#de5052;border-color:#521010;color: #fff;\" class=\"cf-alert cf-alert-error\">This web property is not accessible via this address.</p></div>"
 				}
 
 				var z = document.getElementById("cf-please-wait");
@@ -129,7 +129,7 @@ queue.push(function () {
 			return;
 
 		var v = document.getElementById("cf-spinner-please-wait")
-		if (v) v.innerHTML += "<p class=\"cf-alertcf-alert-error\">This is taking longer than expected, please reload the page.</p>"
+		if (v) v.innerHTML += "<p class=\"cf-alert cf-alert-error\">This is taking longer than expected, please reload the page.</p>"
 	}, 10000)
 
 	var s = document.createElement("script")

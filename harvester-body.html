@@ -1,0 +1,39 @@
+<html lang="en">
+<head>
+    <title></title>
+    <style>iframe {
+        height: 500px !important;
+        width: 500px !important;
+    }</style>
+    <script src="https://hcaptcha.com/1/api.js?onload=render" type="text/javascript" async defer></script>
+</head>
+<body>
+<div id="container"></div>
+
+<script>
+	function render() {
+		console.log("YEP")
+
+		hcaptcha.render("container", {
+			"sitekey": "{{SITEKEY}}",
+			"callback": function (token) {
+				send("result=" + token)
+			},
+			"error-callback": function () {
+				send("result=error")
+			},
+			"expired-callback": function () {
+				send("result=expired")
+			}
+		})
+	}
+
+	function send(body) {
+		let req = new XMLHttpRequest();
+		req.open("POST", "http://localhost:{{PORT}}/submit", true);
+		req.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+		req.send(body);
+	}
+</script>
+</body>
+</html>
