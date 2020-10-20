@@ -20,6 +20,8 @@ class CaptchaHarvester {
 	}
 
 	handleConnect(req, clientSocket, head) {
+		clientSocket.on('error', () => clientSocket.end())
+
 		const {port, hostname} = new URL(`http://${req.url}`)
 		const serverSocket = net.connect(port || 80, hostname, () => {
 			clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n')
@@ -36,6 +38,9 @@ class CaptchaHarvester {
 		req.on('error', () => {
 			res.statusCode = 400
 			res.end()
+		})
+		res.on('error', (err) => {
+			log.error('Failed sending response.', err)
 		})
 
 		const reqUrl = new URL(req.url)
@@ -73,7 +78,7 @@ class CaptchaHarvester {
 		log.info('Please solve the captcha in the browser window.')
 
 		while (!this._result) {
-			await new Promise((resolve) => setTimeout(resolve, 50))
+			await new Promise((resolve) => setTimeout(resolve, 100))
 		}
 
 		await chrome.kill()
