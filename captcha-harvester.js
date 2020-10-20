@@ -1,62 +1,86 @@
-const puppeteer = require('puppeteer')
-const express = require('express')
+const http = require('http')
+const net = require('net')
 const fs = require('fs')
+const ChromeLauncher = require('chrome-launcher')
 const log = require('./logging')
 
 class CaptchaHarvester {
 
 	constructor(website, sitekey, userAgent, port = 7777) {
-		this._website = website
+		this._url = new URL(website)
 		this._sitekey = sitekey
 		this._port = port
 		this._userAgent = userAgent
-		this._app = express()
-		this._app.use(express.urlencoded({extended: true}))
-		this._server = this._app.listen(port)
+		this._server = http.createServer(this.handleRequest.bind(this))
+			.on('connect', this.handleConnect.bind(this))
+			.on('error', (err) => log.error('Failed handling request.', err))
+			.listen(port)
+
+		this._result = false
+	}
+
+	handleConnect(req, clientSocket, head) {
+		const {port, hostname} = new URL(`http://${req.url}`)
+		const serverSocket = net.connect(port || 80, hostname, () => {
+			clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n')
+			serverSocket.write(head)
+			serverSocket.pipe(clientSocket)
+			clientSocket.pipe(serverSocket)
+		}).on('error', (err) => {
+			log.error('Failed proxying HTTPS request.', err)
+			clientSocket.end()
+		})
+	}
+
+	handleRequest(req, res) {
+		req.on('error', () => {
+			res.statusCode = 400
+			res.end()
+		})
+
+		const reqUrl = new URL(req.url)
+		if (reqUrl.hostname === this._url.hostname && reqUrl.pathname === '/') {
+			let htmlBody = fs.readFileSync('./harvester-body.html').toString()
+			htmlBody = htmlBody.replace('{{SITEKEY}}', this._sitekey)
+
+			res.setHeader('Content-Type', 'text/html')
+			res.writeHead(200)
+			res.end(htmlBody)
+		} else if (reqUrl.hostname === 'captcha-result' && req.method === 'POST') {
+			let token = ''
+			req.on('data', (data) => token += data)
+			req.on('end', () => {
+				this._result = token
+
+				res.statusCode = 200
+				res.end()
+			})
+		} else {
+			res.statusCode = 404
+			res.end()
+		}
 	}
 
 	async solveCaptcha() {
 		if (!this._server)
 			throw new Error('Cannot reuse instance of CaptchaHarvester.')
 
-		let result = null
-		this._app.post('/submit', (req, res) => {
-			result = req.body.result
-			res.header('Access-Control-Allow-Origin', '*')
-			res.sendStatus(200)
+		const chrome = await ChromeLauncher.launch({
+			startingUrl: this._url.toString().replace('https:', 'http:'),
+			chromeFlags: [`--proxy-server=http://127.0.0.1:${this._port}`]
 		})
 
-		let htmlBody = fs.readFileSync('./harvester-body.html').toString()
-		htmlBody = htmlBody.replace('{{SITEKEY}}', this._sitekey)
-		htmlBody = htmlBody.replace('{{PORT}}', this._port.toString())
+		log.info('Please solve the captcha in the browser window.')
 
-		const browser = await puppeteer.launch({headless: false})
-		const context = browser.defaultBrowserContext()
-		const page = (await context.pages())[0] || await context.newPage()
-		await page.setUserAgent(this._userAgent)
-
-		await page.setRequestInterception(true)
-		page.on('request', req => {
-			if (!req.isNavigationRequest()) {
-				req.continue()
-				return
-			}
-
-			req.respond({status: 200, contentType: 'text/html', body: htmlBody})
-		})
-
-		await page.goto(this._website)
-
-		log.info('Check your browser to solve the captcha.')
-		while (!result) {
-			await new Promise((resolve) => setTimeout(resolve, 500))
+		while (!this._result) {
+			await new Promise((resolve) => setTimeout(resolve, 50))
 		}
 
-		await browser.close()
+		await chrome.kill()
 		this._server.close()
 		this._server = null
 
-		return result
+		return this._result
 	}
 }
 
