@@ -288,11 +288,12 @@ class CloudflareBypass {
 
 		this._cookies.putProgram('e')
 
+		let lastChScript = null
 		let url = chPlatUrl + '/generate/ov1' + extracted['challengePath'] + this._opts['cRay'] + '/' + this._opts['cHash']
 		while (url) {
 			const chScript = await this._sendCompressed(url, this._ctx, extracted['lzAlphabet'], 0)
 			if (chScript.indexOf('window.location.reload();') !== -1) {
-				log.error(chScript)
+				log.error(lastChScript)
 				log.info(logPrefix + 'Failed solving challenges (' + listChallengesIn(this._ctx).join(', ') + '). Reloading.')
 				addFailedAttempt(this._ctx)
 
@@ -384,7 +385,7 @@ class CloudflareBypass {
 			}
 
 			log.silly(logPrefix + 'Executing challenge script...')
-			url = await this._execChallenge(chScript)
+			url = await this._execChallenge(lastChScript = chScript)
 			if (!url) {
 				log.error(chScript)
 				log.info(logPrefix + 'Couldn\'t complete all challenges (' + listChallengesIn(this._ctx).join(', ') + '). Reloading.')
