@@ -9,7 +9,7 @@ function patchSha256(ctx) {
 	}
 }
 
-function patchImageChallenge(ctx) { // 89d70e43
+function patch89d70e43(ctx) {
 	const _getElementById = ctx.document.getElementById.bind(ctx.document)
 	ctx.document.getElementById = function (id) {
 		const elm = _getElementById(id)
@@ -47,5 +47,5 @@ function patchImageChallenge(ctx) { // 89d70e43
 module.exports = function (jsdom) {
 	const ctx = jsdom.getInternalVMContext()
 	patchSha256(ctx)
-	patchImageChallenge(ctx)
+	patch89d70e43(ctx)
 }

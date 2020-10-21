@@ -1,5 +1,3 @@
-/* eslint-disable */
-
 (function (chl_done) {
 	window._cf_chl_hload = function () {
 		var d = document.createElement("div")
@@ -52,4 +50,3 @@
 })(function () {
 
 });
-

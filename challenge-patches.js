@@ -52,7 +52,7 @@ PATCHES['cf_win_chrome'] = function (ctx, entry) {
 	entry['csi'] = (() => {
 		const startE = ts - getRndInteger(60 * 1000, 120 * 1000)
 		const onloadT = startE + getRndInteger(500, 2000)
-		const pageT = getRndInteger(10 * 1000_0000, 60 * 1000_0000) / 1000
+		const pageT = getRndInteger(10 * 10000000, 60 * 10000000) / 1000
 		return {'startE': startE, 'onloadT': onloadT, 'pageT': pageT, 'tran': getRndInteger(10, 20)}
 	})()
 
