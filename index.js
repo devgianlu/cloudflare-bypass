@@ -6,6 +6,7 @@ const lz = require('./lz')
 const log = require('./logging')
 const patchJsDom = require('./jsdom-patches')
 const patchChallenges = require('./challenge-patches')
+const patchScript = require('./script-patches')
 const {addSuccessfulAttempt, addFailedAttempt, listChallengesIn} = require('./debugging')
 const CaptchaHarvester = require('./captcha-harvester')
 
@@ -282,7 +283,7 @@ class CloudflareBypass {
 
 	async _solve(chPlatUrl, type) {
 		const logPrefix = '(' + this._opts['cHash'] + ') '
-		log.info(logPrefix+'Solving ' + type + ' challenge...')
+		log.info(logPrefix + 'Solving ' + type + ' challenge...')
 
 		const extracted = await this._initScript(chPlatUrl, type)
 
@@ -291,7 +292,7 @@ class CloudflareBypass {
 		let lastChScript = null
 		let url = chPlatUrl + '/generate/ov1' + extracted['challengePath'] + this._opts['cRay'] + '/' + this._opts['cHash']
 		while (url) {
-			const chScript = await this._sendCompressed(url, this._ctx, extracted['lzAlphabet'], 0)
+			let chScript = await this._sendCompressed(url, this._ctx, extracted['lzAlphabet'], 0)
 			if (chScript.indexOf('window.location.reload();') !== -1) {
 				log.error(lastChScript)
 				log.info(logPrefix + 'Failed solving challenges (' + listChallengesIn(this._ctx).join(', ') + '). Reloading.')
@@ -385,6 +386,8 @@ class CloudflareBypass {
 			}
 
 			log.silly(logPrefix + 'Executing challenge script...')
+
+			chScript = patchScript(chScript)
 			url = await this._execChallenge(lastChScript = chScript)
 			if (!url) {
 				log.error(chScript)

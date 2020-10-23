@@ -1,0 +1,23 @@
+(function (chl_done) {
+	var element = new Image();
+	var parent = document.getElementById("challenge-form");
+	var cb = function () {
+		window._cf_chl_ctx[window._cf_chl_ctx.chC].ah = element.naturalHeight ? element.naturalHeight : element.height;
+		window._cf_chl_ctx[window._cf_chl_ctx.chC].aw = element.naturalWidth ? element.naturalWidth : element.width;
+		window._cf_chl_ctx[window._cf_chl_ctx.chC].ah = element.height;
+		window._cf_chl_ctx[window._cf_chl_ctx.chC].aw = element.width;
+		parent.removeChild(element);
+		chl_done();
+	};
+	if (element.addEventListener) {
+		element.addEventListener("load", cb, false);
+	} else if (element.attachEvent) {
+		element.attachEvent("onload", cb);
+	} else {
+		element.onload = cb;
+	}
+	element.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGQAAAAFCAMAAACElLmZAAAAGFBMVEUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABWNxwqAAAACHRSTlMAAAAAAAAAALfnUqEAAAIESURBVHjaAfkBBv4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAfkAAVrc0GsAAAAASUVORK5CYII=";
+	parent.appendChild(element);
+})(function () {
+
+});

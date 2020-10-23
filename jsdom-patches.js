@@ -10,7 +10,7 @@ function patchSha256(ctx) {
 	}
 }
 
-function patch89d70e43(ctx) {
+function patch_89d70e43(ctx) {
 	const _getElementById = ctx.document.getElementById.bind(ctx.document)
 	ctx.document.getElementById = function (id) {
 		const elm = _getElementById(id)
@@ -45,7 +45,7 @@ function patch89d70e43(ctx) {
 	}
 }
 
-function patch6feeed9d(ctx) {
+function patch_6feeed9d(ctx) {
 	const LOOKUP = [{h: 24, i: 2}, {h: 13, i: 4}]
 
 	function shouldHandle(child) {
@@ -100,6 +100,6 @@ function patch6feeed9d(ctx) {
 module.exports = function (jsdom) {
 	const ctx = jsdom.getInternalVMContext()
 	patchSha256(ctx)
-	patch89d70e43(ctx)
-	patch6feeed9d(ctx)
+	patch_89d70e43(ctx)
+	patch_6feeed9d(ctx)
 }
