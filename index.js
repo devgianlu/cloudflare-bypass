@@ -4,9 +4,7 @@ const vm = require('vm')
 const {JSDOM} = require('jsdom')
 const lz = require('./lz')
 const log = require('./logging')
-const patchJsDom = require('./jsdom-patches')
-const patchChallenges = require('./challenge-patches')
-const patchScript = require('./script-patches')
+const {patchJsDom, patchScript, patchContext} = require('./patches')
 const {addSuccessfulAttempt, addFailedAttempt, listChallengesIn} = require('./debugging')
 const CaptchaHarvester = require('./captcha-harvester')
 
@@ -247,7 +245,7 @@ class CloudflareBypass {
 
 		this._cookies.putProgram('a' + this._ctx.chLog.c)
 
-		patchChallenges(this._ctx, {reqLog: this._reqLog})
+		patchContext(this._ctx, {reqLog: this._reqLog})
 		log.verbose('(' + this._opts['cHash'] + ') Context after script exec: ' + JSON.stringify(this._ctx))
 		return sendUrl
 	}
@@ -378,7 +376,7 @@ class CloudflareBypass {
 				}
 
 				this._cookies.putProgram('a' + this._ctx.chLog.c)
-				patchChallenges(this._ctx, {reqLog: this._reqLog})
+				patchContext(this._ctx, {reqLog: this._reqLog})
 				log.verbose(logPrefix + 'Context after captcha solved: ' + JSON.stringify(this._ctx))
 
 				url = sendUrl
