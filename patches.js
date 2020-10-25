@@ -34,11 +34,13 @@ module.exports = {
 		return script
 	},
 	patchContext: function (ctx, state = null) {
-		for (let name in LOADED_PATCHES) {
-			if ('patchContext' in LOADED_PATCHES[name]) {
-				if (name in ctx)
-					LOADED_PATCHES[name].patchContext(ctx, ctx[name], state)
-			}
+		for (let key in ctx) {
+			if (!Object.hasOwnProperty.call(ctx, key))
+				continue
+
+			const name = ctx[key].i
+			if (name in LOADED_PATCHES && 'patchContext' in LOADED_PATCHES[name])
+				LOADED_PATCHES[name].patchContext(ctx, ctx[key], state)
 		}
 	}
 }
