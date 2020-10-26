@@ -124,7 +124,7 @@ class CloudflareBypass {
 	 */
 	constructor(url) {
 		this._url = new URL(url)
-		this._userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36' // FIXME
+		this._userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36' // FIXME: Rotate agents
 		this._cookies = new ManagedCookies()
 		this._httpClient = new Http(this._url)
 		this._reqLog = new RequestsLog()
@@ -347,51 +347,12 @@ class CloudflareBypass {
 				} else {
 					throw new Error('Unknown challenge response code: ' + resp.status)
 				}
-			} else if ((chScript.match(/setTimeout\(chl_done,0\)/g) || []).length === 3) { // TODO: We should probably intercept this like others
-				let renderOpts = null
-				const render = function (id, opts) {
-					renderOpts = opts
-				}
-
-				this._cookies.putProgram('b' + this._ctx.chLog.c)
-
-				let sendUrl = null
-				this._execScript(chScript, {
-					hcaptcha: {render: render},
-					sendRequest: function (url) {
-						sendUrl = url
-					},
-					_cf_chl_hloaded: true
-				})
-
-				const siteKey = renderOpts.sitekey
-				log.info(logPrefix + 'Site key is ' + siteKey)
-
-				const harvester = new CaptchaHarvester(this._url, siteKey, this._userAgent)
-				const captchaResult = await harvester.solveCaptcha()
-				if (captchaResult === 'error' || captchaResult === 'expired')
-					log.info(logPrefix + 'Failed solving captcha: ' + captchaResult)
-				else
-					log.info(logPrefix + 'Solved captcha, token is ' + captchaResult)
-
-				renderOpts.callback(captchaResult)
-
-				while (!sendUrl) {
-					await new Promise((resolve) => setTimeout(resolve, 50))
-				}
-
-				this._cookies.putProgram('a' + this._ctx.chLog.c)
-				patchContext(this._ctx, {reqLog: this._reqLog})
-				log.verbose(logPrefix + 'Context after captcha solved: ' + JSON.stringify(this._ctx))
-
-				url = sendUrl
-				continue
 			}
 
 			log.silly(logPrefix + 'Executing challenge script...')
 
 			chScript = patchScript(chScript)
-			url = await this._execChallenge(lastChScript = chScript)
+			url = await this._execChallenge(lastChScript = chScript, type === 'captcha' ? 120000 : 1000)
 			if (!url) {
 				log.error(chScript)
 				log.info(logPrefix + 'Couldn\'t complete all challenges (' + listChallengesIn(this._ctx).join(', ') + '). Reloading.')
@@ -442,7 +403,7 @@ class CloudflareBypass {
 			pretendToBeVisual: true,
 			url: resp.url
 		})
-		patchJsDom(this._jsdom)
+		patchJsDom(this._jsdom, {url: this._url, userAgent: this._userAgent})
 
 		try {
 			if (resp.headers['server'].startsWith('cloudflare')) {

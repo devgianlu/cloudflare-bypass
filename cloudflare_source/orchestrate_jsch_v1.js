@@ -101,7 +101,7 @@ var sendRequest = function (url, retryCount) {
 	};
 
 	// Create payload and send it
-	var payload = getCookie["compressToEncodedURIComponent"](JSON.stringify(that["_cf_chl_ctx"])).replace('+', '%2b'); // TODO: Use lz-string with custom alphabet
+	var payload = compressToEncodedURIComponent(JSON.stringify(that["_cf_chl_ctx"])).replace('+', '%2b');
 	req.send('v_' + that["_cf_chl_opt"]["cRay"] + '=' + payload);
 };
 
