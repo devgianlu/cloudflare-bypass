@@ -6,8 +6,15 @@ const log = require('./logging')
 
 class CaptchaHarvester {
 
-	constructor(website, sitekey, userAgent, port = 7777) {
-		this._url = new URL(website)
+	/**
+	 * Creates a new instance of the harvester
+	 * @param url {URL} The website Url
+	 * @param sitekey {string} The website sitekey
+	 * @param userAgent {string} The user agent
+	 * @param port {int} The response server port
+	 */
+	constructor(url, sitekey, userAgent, port = 7777) {
+		this._url = url
 		this._sitekey = sitekey
 		this._port = port
 		this._userAgent = userAgent
@@ -66,6 +73,10 @@ class CaptchaHarvester {
 		}
 	}
 
+	/**
+	 * Solves the captcha by opening a Chrome instance.
+	 * @returns {Promise<string>} The promise resolving to the hCaptcha result
+	 */
 	async solveCaptcha() {
 		if (!this._server)
 			throw new Error('Cannot reuse instance of CaptchaHarvester.')

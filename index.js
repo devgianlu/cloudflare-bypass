@@ -1,8 +1,7 @@
-const axios = require('axios')
-
 const vm = require('vm')
 const {JSDOM} = require('jsdom')
 const lz = require('./lz')
+const Http = require('./http')
 const log = require('./logging')
 const {patchJsDom, patchScript, patchContext} = require('./patches')
 const {addSuccessfulAttempt, addFailedAttempt, listChallengesIn} = require('./debugging')
@@ -68,7 +67,7 @@ class RequestsLog {
 
 	put(resp) {
 		function headersLength() {
-			const headers = resp.request.res.rawHeaders
+			const headers = resp.res.rawHeaders
 			let length = 0
 			for (let i = 0; i < headers.length; i += 2) {
 				length += headers[i].length + 2 + headers[i + 1].length + 2
@@ -80,15 +79,15 @@ class RequestsLog {
 		if (!bodyLength) bodyLength = resp.data.length // Must be the encoded length
 
 		let totalLength = 0
-		totalLength += 15 // HTTP/1.1 200 OK\n\r
+		totalLength += resp.res.httpVersion.length + resp.res.statusMessage.length + 7 // HTTP/1.1 200 OK\n\r
 		totalLength += headersLength()
 		totalLength += 2 // \n\r
 		totalLength += bodyLength
 
 		this._list.push({
-			url: resp.request.res.responseUrl,
+			url: resp.url,
 			contentLength: bodyLength,
-			httpVersion: resp.request.res.httpVersion,
+			httpVersion: resp.res.httpVersion,
 			totalLength: totalLength
 		})
 	}
@@ -111,38 +110,37 @@ class RequestsLog {
 	}
 }
 
+/**
+ * @typedef BypassResult
+ * @property cloudflare {boolean} Whether the website is actually protected by Cloudflare
+ * @property cfClearance {?string} The Cloudflare clearance cookie
+ * @property cfdUid {?string} The Cloudflare UID
+ */
+
 class CloudflareBypass {
+	/**
+	 * Create a new instance for the given website
+	 * @param url {string} The string URL
+	 */
 	constructor(url) {
-		this._url = url
+		this._url = new URL(url)
 		this._userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36' // FIXME
 		this._cookies = new ManagedCookies()
+		this._httpClient = new Http(this._url)
 		this._reqLog = new RequestsLog()
-		this._axios = axios.create({
-			baseURL: url,
-			decompress: false,
-			validateStatus: function () {
-				return true
-			}
-		})
+	}
 
-		const parsed = new URL(url)
-		this._axios.interceptors.request.use((config) => {
-			config.headers['User-Agent'] = this._userAgent
-			config.headers['Origin'] = parsed.protocol + '//' + parsed.host
-			config.headers['Referer'] = url
-			config.headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8'
-			config.headers['Accept-Language'] = 'en-US,en;q=0.9'
-			return config
-		}, function (error) {
-			return Promise.reject(error)
-		})
+	async _http(options) {
+		if (!('headers' in options)) options['headers'] = {}
+		options.headers['User-Agent'] = this._userAgent
+		options.headers['Origin'] = this._url.protocol + '//' + this._url.host
+		options.headers['Referer'] = this._url.toString()
+		options.headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8'
+		options.headers['Accept-Language'] = 'en-US,en;q=0.9'
 
-		this._axios.interceptors.response.use((resp) => {
-			this._reqLog.put(resp)
-			return resp
-		}, function (error) {
-			return Promise.reject(error)
-		})
+		const resp = await this._httpClient.request(options)
+		this._reqLog.put(resp)
+		return resp
 	}
 
 	_decodeResponse(data, raySuffix) {
@@ -197,7 +195,7 @@ class CloudflareBypass {
 		const payload = lz.compress(JSON.stringify(data), alphabet).replace('+', '%2b')
 		log.verbose(logPrefix + 'Crafted payload: ' + payload)
 
-		const chResp = await this._axios.request({
+		const chResp = await this._http({
 			method: 'POST',
 			url: url,
 			headers: {
@@ -251,7 +249,7 @@ class CloudflareBypass {
 	}
 
 	async _initScript(chPlatUrl, type) {
-		const scriptResp = await this._axios.request({
+		const scriptResp = await this._http({
 			method: 'GET',
 			url: chPlatUrl + '/orchestrate/' + type + '/v1',
 			headers: {
@@ -279,6 +277,13 @@ class CloudflareBypass {
 		return extracted
 	}
 
+	/**
+	 * Internal handling of challenge solving.
+	 * @param chPlatUrl The base challenge platform URL
+	 * @param type The challenge type
+	 * @returns {Promise<BypassResult>} A promise resolving to the bypass result
+	 * @private
+	 */
 	async _solve(chPlatUrl, type) {
 		const logPrefix = '(' + this._opts['cHash'] + ') '
 		log.info(logPrefix + 'Solving ' + type + ' challenge...')
@@ -314,7 +319,7 @@ class CloudflareBypass {
 
 				const formUrl = this._jsdom.window.document.getElementById('challenge-form').action
 				log.http(logPrefix + 'Sending form to ' + formUrl)
-				const resp = await this._axios.request({
+				const resp = await this._http({
 					method: 'POST',
 					url: formUrl,
 					headers: {
@@ -338,11 +343,11 @@ class CloudflareBypass {
 				if (resp.status === 301) {
 					const cfClearance = this._cookies.grabFrom('cf_clearance', resp)
 					log.info(logPrefix + 'CF clearance: ' + cfClearance)
-					return {cfClearance: cfClearance, cfdUid: this._cookies.get('__cfduid')}
+					return {cloudflare: true, cfClearance: cfClearance, cfdUid: this._cookies.get('__cfduid')}
 				} else {
 					throw new Error('Unknown challenge response code: ' + resp.status)
 				}
-			} else if ((chScript.match(/setTimeout\(chl_done,0\)/g) || []).length === 3) {
+			} else if ((chScript.match(/setTimeout\(chl_done,0\)/g) || []).length === 3) { // TODO: We should probably intercept this like others
 				let renderOpts = null
 				const render = function (id, opts) {
 					renderOpts = opts
@@ -398,6 +403,12 @@ class CloudflareBypass {
 		}
 	}
 
+	/**
+	 * Internal handling of the "index" page response
+	 * @param resp
+	 * @returns {Promise<{cfClearance: any, cfdUid: any}>}
+	 * @private
+	 */
 	async _request(resp) {
 		this._cookies.removeAll((name) => {
 			return name.startsWith('cf_chl_seq_')
@@ -410,7 +421,7 @@ class CloudflareBypass {
 		log.verbose('Extracted options: ' + JSON.stringify(this._opts), this._opts)
 
 		log.silly('Requesting js/nocookie/transparent.gif...')
-		await this._axios.request({
+		await this._http({
 			method: 'GET', url: '/cdn-cgi/images/trace/jschal/js/nocookie/transparent.gif?ray=' + this._opts['cRay'],
 			headers: {
 				'User-Agent': this._userAgent,
@@ -419,7 +430,7 @@ class CloudflareBypass {
 		})
 
 		log.silly('Requesting nojs/transparent.gif...')
-		await this._axios.request({
+		await this._http({
 			method: 'GET', url: '/cdn-cgi/images/trace/jschal/nojs/transparent.gif?ray=' + this._opts['cRay'],
 			headers: {
 				'Cookie': this._cookies.cookieHeader(false)
@@ -429,7 +440,7 @@ class CloudflareBypass {
 		this._jsdom = new JSDOM(resp.data, {
 			runScripts: 'dangerously',
 			pretendToBeVisual: true,
-			url: resp.request.res.responseUrl
+			url: resp.url
 		})
 		patchJsDom(this._jsdom)
 
@@ -459,19 +470,23 @@ class CloudflareBypass {
 						throw new Error('Unknown challenge.')
 					}
 				}
+			} else {
+				return {cloudflare: false}
 			}
 		} finally {
 			this._jsdom.window.close()
 		}
-
-		return resp
 	}
 
+	/**
+	 * Makes a request for the specified website
+	 * @returns {Promise<BypassResult>} A promise resolving to the bypass result
+	 */
 	async request() {
 		this._reqLog.clear()
 
 		log.info('Requesting index page...')
-		const resp = await this._axios.request({
+		const resp = await this._http({
 			method: 'GET',
 			url: '/',
 			headers: {

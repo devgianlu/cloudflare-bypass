@@ -19,7 +19,6 @@
   },
   "homepage": "https://github.com/devgianlu/cloudflare-bypass#readme",
   "dependencies": {
-    "axios": "^0.21.0",
     "chrome-launcher": "^0.13.4",
     "jsdom": "^16.4.0",
     "lz-string": "^1.4.4",
