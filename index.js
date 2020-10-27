@@ -5,7 +5,6 @@ const Http = require('./http')
 const log = require('./logging')
 const {patchJsDom, patchScript, patchContext} = require('./patches')
 const {addSuccessfulAttempt, addFailedAttempt, listChallengesIn} = require('./debugging')
-const CaptchaHarvester = require('./captcha-harvester')
 
 
 class ManagedCookies {
