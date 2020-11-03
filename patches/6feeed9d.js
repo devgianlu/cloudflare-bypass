@@ -1,7 +1,7 @@
 const log = require('../logging')
 
 module.exports = {
-	patchContext: function (ctx, entry) {
+	patchContext: function (ctx, entry) { // TODO: Rewrite as JsDom patch
 		const LOOKUP = {
 			'15;6;13': [{h: 35, i: 6}, {h: 19, i: 21}],
 			'7;3;10': [{h: 22, i: 3}, {h: 11, i: 10}],

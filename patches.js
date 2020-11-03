@@ -33,7 +33,7 @@ module.exports = {
 
 		return script
 	},
-	patchContext: function (ctx, state = null) {
+	patchContext: function (ctx, state = null) { // TODO: Remove this
 		for (let key in ctx) {
 			if (!Object.hasOwnProperty.call(ctx, key))
 				continue

@@ -1,5 +1,5 @@
 module.exports = {
-	patchContext: function (ctx, entry, state) {
+	patchContext: function (ctx, entry, state) {  // TODO: Rewrite as JsDom patch
 		function makeResEntry(log, initiator) {
 			return {
 				t: 'r',

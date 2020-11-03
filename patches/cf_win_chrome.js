@@ -1,5 +1,5 @@
 module.exports = {
-	patchContext: function (ctx, entry) {
+	patchContext: function (ctx, entry) {  // TODO: Rewrite as JsDom patch
 		const ts = new Date().getTime()
 
 		function getRndInteger(min, max) {
