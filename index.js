@@ -402,7 +402,7 @@ class CloudflareBypass {
 			pretendToBeVisual: true,
 			url: resp.url
 		})
-		patchJsDom(this._jsdom, {url: this._url, userAgent: this._userAgent})
+		patchJsDom(this._jsdom, {url: this._url, userAgent: this._userAgent, reqLog: this._reqLog})
 
 		try {
 			if (resp.headers['server'].startsWith('cloudflare')) {

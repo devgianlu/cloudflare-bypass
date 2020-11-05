@@ -1,4 +1,4 @@
-const PATCHES = ['_sha256', 'c48c9b6c', '89d70e43', '23452c7d', 'ec60888a', 'cf_win_chrome', '6feeed9d', '78cc909d']
+const PATCHES = ['_sha256', 'c48c9b6c', '89d70e43', '23452c7d', 'ec60888a', 'cf_win_chrome', '78cc909d']
 
 /**
  * @typedef Patch
