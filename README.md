@@ -4,10 +4,8 @@
 
 A NodeJS tool to bypass Cloudflare IUAM v2.
 
-## Work in progress
-The library is getting pretty good at solving all JS challenges, but it keeps failing at the captcha challenge.
-
-**Disclaimer**: The way we are currently patching challenges that do not work by default is broken on any website other than the one used for testing. See https://github.com/devgianlu/cloudflare-bypass/issues/15.
+## Disclaimer
+The public version of this repository is not being maintained anymore for obvious reasons. If you are interested, contact me privately.
 
 ## How it works
 The JS challenge (`jsch`) consist of multiple concatenated JavaScript challenges. I am trying to reverse engineer all of them, all the challenges that have been reversed can be seen [here](challanges_source). 
