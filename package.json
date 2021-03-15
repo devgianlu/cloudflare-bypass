@@ -20,7 +20,7 @@
   "homepage": "https://github.com/devgianlu/cloudflare-bypass#readme",
   "dependencies": {
     "chrome-launcher": "^0.13.4",
-    "jsdom": "^16.5.0",
+    "jsdom": "^16.5.1",
     "lz-string": "^1.4.4",
     "probe-image-size": "^6.0.0",
     "winston": "^3.3.3"
