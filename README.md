@@ -4,9 +4,6 @@
 
 A NodeJS tool to bypass Cloudflare IUAM v2.
 
-## Disclaimer
-The public version of this repository is not being maintained anymore for obvious reasons. If you are interested, contact me privately.
-
 ## How it works
 The JS challenge (`jsch`) consist of multiple concatenated JavaScript challenges. I am trying to reverse engineer all of them, all the challenges that have been reversed can be seen [here](challanges_source). 
 
